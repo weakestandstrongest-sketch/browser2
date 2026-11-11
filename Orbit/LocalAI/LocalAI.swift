@@ -272,7 +272,7 @@ final class LocalAI {
                 let task = Task {
                     do {
                         try await AppleLLM.generate(messages: messages, temperature: Double(temperature), maxTokens: maxTokens) {
-                            continuation.yield($0)
+                            _ = continuation.yield($0)
                         }
                     } catch {
                         failure.error = error
@@ -304,7 +304,7 @@ final class LocalAI {
         let pieces = AsyncStream<String> { continuation in
             let task = Task {
                 do {
-                    let result = try await engine.generate(prompt: prompt, options: options) { continuation.yield($0) }
+                    let result = try await engine.generate(prompt: prompt, options: options) { _ = continuation.yield($0) }
                     if result.finish == "error" { failure.error = LocalAIError.failed("AIが途中で止まりました") }
                 } catch {
                     let ns = error as NSError

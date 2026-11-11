@@ -1,40 +1,54 @@
 # Orbit — iPhone向けAIブラウザ
 
-[Dia](https://www.diabrowser.com/) と [Comet](https://www.perplexity.ai/comet) のコンセプトを参考にした、iPhone 用の AI ブラウザです。
-SwiftUI + WKWebView で作られており、AI には Claude API（Anthropic）を使います。GitHub Actions で **IPA を自動ビルド**できます。
+[Dia](https://www.diabrowser.com/)・[Comet](https://www.perplexity.ai/comet) の AI 機能と、Arc・Opera の UI を参考にした iPhone 用ブラウザです。
+**AI は基本的に iPhone の中で動きます**（ひび手帳の「まいにち」と同じ llama.cpp / Apple Intelligence の仕組み）。ページの内容や質問は外に送られません。
+SwiftUI + WKWebView 製で、GitHub Actions が **未署名の IPA** を作ります。
 
-## 主な機能
+## AI（ローカル・まいにち と同じ作り）
+
+| | 内容 |
+| --- | --- |
+| エンジン | llama.cpp（GGUF、Metal で GPU 実行）と Apple Intelligence（iOS 26 の Foundation Models） |
+| モデル | まいにち と同じ顔ぶれ：Apple Intelligence / Qwen3.5 4B（おすすめ）/ Gemma 4 E4B / LFM3 VL 2B / Ternary Bonsai 2 9B / LLM-jp-4.1 8B |
+| 入手 | Hugging Face から一度だけダウンロードし、アプリの中（Application Support/orbit-models、iCloud バックアップ対象外）に保存 |
+| 会話の書式 | まいにち の chat template（gemma4 / qwen35 / lfm3 / llmjp41）の文字部分を Swift に移植。考える部分はオフ、`<think>` やチャンネル形式は答えから除去 |
+| llama.cpp の版 | `v0.9.0`（ひび手帳と同じ）。CI が `build-xcframework.sh ios-device` で作ってキャッシュ |
+
+AI でできること:
+
+- **タブと会話（Dia）**：表示中のページや他のタブを読ませて質問・要約・比較。ページが長いときは自動で短くして再試行
+- **スキル（Dia）**：「要約」「翻訳」などの指示を保存して `/要約` で呼び出し。AI オーブを長押しでもすぐ実行
+- **ブラウザ操作（Comet）**：AI が1回に1つの操作（タップ・入力・スクロール・URL を開く・検索・戻る）を JSON で決めて実行。llama.cpp では **GBNF の文法で JSON の形を固定**するので、小さなモデルでも壊れた出力になりません。購入・送信・パスワード入力などの前は確認カードが出ます
+- **Webでまとめて調べる（Arc Search の Browse for Me）**：検索 → 上位のページを見えないところで開いて読む → 出典つきでまとめる
+- **パーソナライズ**：設定の「あなたについて」を毎回 AI に伝える
+
+クラウドの Claude（Anthropic API）も **任意で** 選べます（設定 → AI →「AIを動かす場所」）。既定はローカルです。
+
+## ブラウザの UI（Arc / Opera）
 
 | 機能 | 参考 | 内容 |
 | --- | --- | --- |
-| タブと会話する | Dia | 表示中のページ（＋任意の他のタブ）を読み込ませて質問・要約・比較ができる |
-| スキル | Dia | 「要約」「翻訳」「タブを比較」などよく使う指示を保存。`/要約` のように呼び出せる。自作も可能 |
-| 統合アドレスバー | Dia / Comet | 1つの入力欄で URL を開く・Web検索・AIに質問・エージェントに依頼・スキル実行・タブ検索 |
-| パーソナライズ | Dia | 「あなたについて」のメモを毎回AIに伝え、回答スタイルを調整 |
-| アシスタントのサイドパネル | Comet | ページを見たまま下からパネルを出して会話（ハーフシート表示中もページを操作可能） |
-| エージェント（操作の代行） | Comet | AIがページを読み取り、タップ・入力・スクロール・ページ移動・新規タブを自分で実行 |
-| 安全確認 | Comet | 購入・送信・削除などの操作やパスワード入力の前に、許可カードで確認（設定で変更可） |
-| Web検索と出典 | Comet / Perplexity | Claude のサーバー側 Web 検索で最新情報を調べ、出典を表示（タップで新しいタブ） |
-| AIでタブ整理 | — | タブ一覧から開いているタブをテーマ別にまとめる |
+| スペース | Arc | タブを「パーソナル」「仕事」などに分け、それぞれに色とアイコン。ツールバーやスタートページがスペースの色になる |
+| ピン留めタブ | Arc | タブ一覧の上に丸いアイコンで並ぶ。自動アーカイブの対象外 |
+| 自動アーカイブ | Arc | しばらく見ていないタブを自動でしまう（12時間／1日／1週間／しない）。アーカイブから開き直せる |
+| アドレスバーをスワイプ | Arc Search | 左右にスワイプで隣のタブへ |
+| ツールバーが小さくなる | Arc / Safari | 下にスクロールすると最小表示、上に戻すと元どおり |
+| スピードダイヤル・よく見るサイト | Opera | 新しいタブにお気に入りと、履歴から多く見ているサイトを表示 |
+| 広告ブロック | Opera | 内蔵の広告・トラッカーブロック（WebKit のコンテンツブロッカー） |
+| プライベートタブ | Opera / Safari | 履歴・Cookie を残さないタブ（タブ一覧の「プライベート」） |
+| 統合アドレスバー | Dia / Arc | URL・検索・履歴・AI に質問・Web でまとめて調べる・ブラウザ操作・スキル・タブ検索 |
 
-ほかに、タブの保存・復元、引っ張って更新、スワイプで戻る/進む、共有、Cookie消去などの基本機能があります。
-
-## 画面構成
-
-- **ボトムバー**: アドレス（タップで統合アドレスバー）／戻る・進む／✨ AIボタン／タブ数／メニュー
-- **AIパネル**: 上部に会話、下部にスキルチップ・添付タブチップ・入力欄。🪄 でブラウザ操作のオン/オフ、🌐 でWeb検索のオン/オフ
-- **スタートページ**: 新しいタブを開いたときの画面。AIへの質問例を表示
+ほかに、タブの保存と復元（開くまで読み込まない）、引っ張って更新、スワイプで戻る／進む、共有などがあります。
 
 ## IPA の作り方
 
 ### A. GitHub Actions（Mac 不要）
 
-1. このリポジトリに push すると `.github/workflows/build-ipa.yml` が macOS ランナーでビルドします（Actions タブから手動実行も可）。
-2. 完了したら Actions の実行結果ページから **`Orbit-unsigned-ipa`** をダウンロードします。
-3. 中の `Orbit-unsigned.ipa` は**未署名**です。iPhone に入れるには署名が必要です:
-   - **Sideloadly / AltStore**: 無料の Apple ID で署名してインストールできます（無料アカウントは7日ごとに再署名が必要）。
-   - **Apple Developer Program**（有料）の証明書があれば、長期間使え、TestFlight 配布もできます。
-   - バンドルIDは `dev.orbit.browser` です。必要に応じて `project.yml` の `PRODUCT_BUNDLE_IDENTIFIER` を変更してください。
+1. push すると `.github/workflows/build-ipa.yml` が macOS ランナーでビルドします（Actions タブから手動実行も可）。
+   - llama.cpp（`v0.9.0`）を iOS 用にビルドして `Vendor/llama.xcframework` に置き、アプリに組み込みます（2回目からはキャッシュ）。
+2. 実行結果ページの Artifacts から **`Orbit-unsigned-ipa`** をダウンロードします。
+3. 中の `Orbit-unsigned.ipa` は未署名です。**AltStore / Sideloadly** などで自分の Apple ID で署名して入れてください（無料の Apple ID は7日ごとに再署名）。
+   - バンドルIDは `dev.orbit.browser`（`project.yml` で変更可）
 
 ### B. 手元の Mac でビルド
 
@@ -43,68 +57,51 @@ brew install xcodegen
 ```
 
 ```bash
-xcodegen generate
+./scripts/build-llama.sh "ios-device ios-sim"
 ```
 
 ```bash
-open Orbit.xcodeproj
+xcodegen generate && open Orbit.xcodeproj
 ```
 
-Xcode で Signing & Capabilities の Team を設定すれば、実機で実行したり Archive から IPA を書き出したりできます。
-未署名の IPA をコマンドラインで作る場合は、CI と同じ手順で:
+シミュレータでも動かしたいときは、上のように `ios-sim` も一緒に作ってください（CI は実機用の `ios-device` だけ）。
 
-```bash
-xcodebuild -project Orbit.xcodeproj -scheme Orbit -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
-```
+## 初めて使うとき
 
-```bash
-./scripts/package-ipa.sh build/Build/Products/Release-iphoneos/Orbit.app Orbit-unsigned.ipa
-```
-
-## 初回設定
-
-1. [Anthropic Console](https://console.anthropic.com/settings/keys) で API キーを発行します。
-2. アプリのメニュー（…）→ **設定** で API キーを入力します（端末のキーチェーンに保存されます）。
-3. モデル（既定は Claude Opus 5.5。Sonnet 5.5 / Haiku 5.5 も選択可）、思考の深さ、操作確認のレベルを好みに合わせて設定します。
+1. メニュー（…）→ 設定 → AI →「AIモデル」で、モデルを選んでダウンロードします。
+   - iOS 26 で Apple Intelligence が使える iPhone なら、ダウンロードなしで使えます。
+   - おすすめは **Qwen3.5 4B**（約2.7GB、ページ操作にも向く）。メモリが少ない iPhone は **LFM3 VL 2B**（約1.1GB）。
+2. 下の ✨ ボタンで AI パネルを開いて質問します。🪄 でブラウザ操作、🌐 で「Webでまとめて調べる」のオン/オフ。
+3. メモリが足りずに読み込めないときは、「AIモデル」の「コンテキスト長」を短くしてください。
 
 ## 構成
 
 ```
-project.yml                 XcodeGen のプロジェクト定義（iOS 17+）
+project.yml                    XcodeGen の定義（iOS 17+、llama.xcframework を埋め込み、FoundationModels は weak）
 Orbit/
-  App/                      エントリポイント・アプリ全体の状態（AppModel）
-  Browser/                  タブ（WKWebView）、タブ管理、ページ読み取り・操作用JavaScript
+  LocalAI/
+    LlamaEngine.swift          llama.cpp の実行（ひび手帳の HibiLLMPlugin と同じ作り＋GBNF の文法）、モデルのダウンロード
+    AppleLLM.swift             Apple Intelligence（Foundation Models）
+    ChatTemplate.swift         モデルごとの会話の書式、<think> とチャンネル形式の取り除き
+    ModelCatalog.swift         モデルの一覧（まいにち と同じ）
+    LocalAI.swift              モデルの管理・読み込み・生成
   AI/
-    AnthropicClient.swift   Claude Messages API クライアント（SSEストリーミング、リトライ）
-    AssistantEngine.swift   会話とエージェントループ（ツール呼び出し→実行→結果返却）
-    AssistantEngine+Tools   ブラウザ操作ツールの実行と承認フロー
-    Prompts.swift           システムプロンプトとツール定義
-  Models/                   設定、スキル
-  Views/                    SwiftUI 画面（ボトムバー、AIパネル、アドレスバー、タブ一覧、設定…）
-  Resources/                アセット（アプリアイコンなど）
-.github/workflows/          IPA ビルド用ワークフロー
-scripts/package-ipa.sh      .app → .ipa へのパッケージング
+    AssistantEngine.swift      会話の入口（ローカル / クラウドの振り分け、クラウドの tool use）
+    AssistantEngine+Local.swift ローカルでの会話・ブラウザ操作・Webでまとめて調べる
+    AssistantEngine+Tools.swift ブラウザ操作の実行と確認カード
+    LocalAgent.swift           操作の JSON と GBNF、見えないところでページを読む仕組み
+    AnthropicClient.swift      （任意）Claude API
+  Browser/                     タブ、スペース、アーカイブ、広告ブロック、ページの読み取り・操作の JavaScript
+  Models/                      設定、スキル、履歴とスピードダイヤル
+  Views/                       画面（ボトムバー、AIパネル、アドレスバー、タブ一覧、スタートページ、設定、AIモデル）
+scripts/build-llama.sh         llama.cpp → Vendor/llama.xcframework
+scripts/package-ipa.sh         .app → .ipa
 ```
-
-### AI まわりの仕組み
-
-- Swift 用の公式 SDK はないため、`POST /v1/messages` を直接呼び出し（`anthropic-version: 2026-10-21`）、SSE をパースして逐次表示します。
-- エージェントは Claude の **tool use** で動きます。ツールは `read_page`（操作可能な要素に番号を振って一覧化）、`click`、`type_text`、`scroll`、`navigate`、`go_back`、`open_new_tab` です。JavaScript は WKWebView の分離された content world で実行し、ページ側のスクリプトからは干渉されません。
-- Web 検索は Claude のサーバー側ツール（`web_search_20260209`）を使用し、引用元を「出典」として表示します。
-- 会話全体にプロンプトキャッシュ（`cache_control`）を適用し、長い会話やエージェント実行のコストを抑えています。
-- Opus / Sonnet では安全分類器による拒否時に自動で別モデルへ切り替える `fallbacks: "default"` を有効にしています。
-- ページの内容は「信頼できないデータ」としてシステムプロンプトで扱い、ページ内に書かれた指示（プロンプトインジェクション）には従わないよう指示しています。
 
 ## 注意点・制限
 
-- iOS のブラウザは WebKit（WKWebView）を使う必要があります。Dia / Comet のような Chromium 拡張やデスクトップ専用機能は再現していません。
-- エージェントは DOM 操作で動くため、クロスオリジンの iframe 内、canvas で描かれた UI、一部の厳しいボット対策があるサイトでは操作できないことがあります。
-- API キーをアプリに直接持たせる方式は、個人利用やサイドロードを想定しています。App Store などで配布する場合は、キーを持つサーバー（プロキシ）を用意し、設定の「詳細」にその URL を入れる構成にしてください。
-- API の利用料金は各自の Anthropic アカウントに発生します。
-
-## 今後のアイデア
-
-- 履歴・ブックマーク・リーダーモード
-- 音声入力、共有シート（Share Extension）からの「AIに聞く」
-- 会話履歴の保存、タブごとの会話
-- エージェントの進捗表示（`thinking.display: "updates"`）や、スクリーンショットを使った視覚的な操作
+- iOS のブラウザは WebKit（WKWebView）を使う決まりがあるため、Chromium 系の機能は再現していません。
+- ローカルのモデルは数 GB あり、初回のダウンロードに時間がかかります（Wi-Fi 推奨）。生成の速さは iPhone の性能によります。
+- 小さなモデルでのブラウザ操作は試験的です。複雑なサイトや、クロスオリジンの iframe・canvas の中は操作できないことがあります。
+- 「Webでまとめて調べる」は、選んでいる検索エンジンの結果ページから上位のリンクを読み取ります。検索エンジン側の画面が変わると取れないことがあります。
+- 内蔵の広告ブロックは主な広告・トラッカーのドメインだけを対象にした小さなリストです。
