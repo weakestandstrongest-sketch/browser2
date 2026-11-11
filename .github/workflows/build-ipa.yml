@@ -5,15 +5,40 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # llama.cpp の版（ひび手帳と同じ。Gemma 4・Qwen3.5・LFM3・Bonsai 2 の Q2_0 に対応）
+  LLAMA_CPP_REF: v0.9.0
+
 jobs:
   build:
-    runs-on: macos-latest
-    timeout-minutes: 40
+    runs-on: macos-26
+    timeout-minutes: 50
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Show Xcode version
         run: xcodebuild -version
+
+      # 作るのに数分かかるので、同じ版ならキャッシュを使う
+      - name: llama.cpp for iOS (cache)
+        id: llama-cache
+        uses: actions/cache@v4
+        with:
+          path: Vendor/llama.xcframework
+          key: llama-xcframework-${{ env.LLAMA_CPP_REF }}-ios-device-v1
+
+      - name: Build llama.cpp for iOS
+        if: steps.llama-cache.outputs.cache-hit != 'true'
+        run: ./scripts/build-llama.sh ios-device
+
+      - name: Check llama.xcframework
+        run: |
+          ls Vendor/llama.xcframework
+          find Vendor/llama.xcframework -name llama.h | head -1 | xargs grep -c llama_sampler_init_grammar
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -22,7 +47,7 @@ jobs:
         run: xcodegen generate
 
       - name: Build (unsigned, Release, iphoneos)
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: |
           set -o pipefail
           xcodebuild \
@@ -40,7 +65,12 @@ jobs:
           grep -q "BUILD SUCCEEDED" build.log
 
       - name: Package unsigned IPA
-        run: ./scripts/package-ipa.sh build/Build/Products/Release-iphoneos/Orbit.app Orbit-unsigned.ipa
+        run: |
+          APP=build/Build/Products/Release-iphoneos/Orbit.app
+          test -f "$APP/Frameworks/llama.framework/llama"
+          ./scripts/package-ipa.sh "$APP" Orbit-unsigned.ipa
+          unzip -l Orbit-unsigned.ipa | grep -q ' Payload/Orbit.app/Frameworks/llama.framework/llama$'
+          ls -lh Orbit-unsigned.ipa
 
       - uses: actions/upload-artifact@v4
         with:

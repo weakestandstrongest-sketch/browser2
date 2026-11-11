@@ -15,6 +15,10 @@ targets:
     platform: iOS
     sources:
       - path: Orbit
+    dependencies:
+      # llama.cpp（ローカルAI）。scripts/build-llama.sh か GitHub Actions が Vendor/ に作る（リポジトリには入れない）
+      - framework: Vendor/llama.xcframework
+        embed: true
     settings:
       base:
         PRODUCT_NAME: Orbit
@@ -24,6 +28,8 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         CODE_SIGN_STYLE: Automatic
         ENABLE_PREVIEWS: YES
+        # Apple Intelligence（iOS 26）。weak なので古い iOS でも起動できる
+        OTHER_LDFLAGS: ["$(inherited)", "-weak_framework", "FoundationModels"]
     info:
       path: Config/Info.plist
       properties:

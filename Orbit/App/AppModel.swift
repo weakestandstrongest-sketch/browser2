@@ -7,6 +7,8 @@ final class AppModel {
     let settings: AppSettings
     let tabs: TabStore
     let skills: SkillStore
+    let history: HistoryStore
+    let localAI: LocalAI
     let assistant: AssistantEngine
 
     var showAssistant = false
@@ -14,15 +16,28 @@ final class AppModel {
     var showTabs = false
     var showSettings = false
     var showSkills = false
+    var showModels = false
 
     init() {
         let settings = AppSettings()
         let tabs = TabStore()
+        let localAI = LocalAI()
+        let history = HistoryStore()
         self.settings = settings
         self.tabs = tabs
+        self.localAI = localAI
+        self.history = history
         self.skills = SkillStore()
-        self.assistant = AssistantEngine(settings: settings, tabs: tabs)
+        self.assistant = AssistantEngine(settings: settings, tabs: tabs, localAI: localAI)
+        tabs.onPageVisited = { [weak history] url, title in history?.record(url: url, title: title) }
         tabs.restoreSession()
+        Task { await tabs.setAdBlock(settings.adBlock) }
+    }
+
+    /// アプリが前面に来たとき：しばらく見ていないタブをしまい、モデルの状態を確かめる。
+    func becameActive() {
+        tabs.archiveStale(after: settings.autoArchive.interval)
+        localAI.refresh()
     }
 
     // MARK: Omnibox actions
@@ -43,27 +58,25 @@ final class AppModel {
     }
 
     /// Ask the assistant from anywhere (omnibox, start page). Attaches the current page if there is one.
-    func ask(_ text: String, agent: Bool = false) {
-        if agent { assistant.agentMode = true }
-        let attach = currentPageAttachment()
+    func ask(_ text: String, mode: SendMode = .auto) {
+        let attach = mode == .web ? [] : currentPageAttachment()
         presentAssistant {
-            self.assistant.send(text, attaching: attach)
+            self.assistant.send(text, attaching: attach, mode: mode)
         }
     }
 
     func run(_ skill: Skill, extra: String = "") {
-        if skill.usesAgent { assistant.agentMode = true }
         let attach: [BrowserTab]
         switch skill.scope {
         case .currentTab: attach = currentPageAttachment()
-        case .allTabs: attach = tabs.tabs.filter { !$0.isBlank }
+        case .allTabs: attach = tabs.currentSpaceTabs.filter { !$0.isBlank }
         case .none: attach = []
         }
         let extraTrimmed = extra.trimmingCharacters(in: .whitespacesAndNewlines)
         let prompt = extraTrimmed.isEmpty ? skill.prompt : skill.prompt + "\n\n追加の指示: " + extraTrimmed
         let display = "/" + skill.name + (extraTrimmed.isEmpty ? "" : " " + extraTrimmed)
         presentAssistant {
-            self.assistant.send(prompt, attaching: attach, displayText: display)
+            self.assistant.send(prompt, attaching: attach, displayText: display, mode: skill.usesAgent ? .agent : .chat)
         }
     }
 

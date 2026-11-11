@@ -64,7 +64,7 @@ struct AssistantPanel: View {
                 ToolbarItem(placement: .principal) {
                     VStack(spacing: 0) {
                         Text("Orbit AI").font(.headline)
-                        Text(app.settings.modelOption.name)
+                        Text(engine.usesCloud ? "\(engine.modelLabel)（クラウド）" : "\(engine.modelLabel) ・ この iPhone の中")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }
@@ -96,13 +96,27 @@ struct AssistantPanel: View {
                         .foregroundStyle(.secondary)
                 }
             }
-            if !app.settings.hasAPIKey {
+            if engine.usesCloud && !app.settings.hasAPIKey {
                 Button {
                     dismiss()
                     app.showSettings = true
                 } label: {
-                    Label("まず設定でAnthropic APIキーを入力してください", systemImage: "key.fill")
+                    Label("クラウドAIを使うには、設定でAPIキーを入力してください", systemImage: "key.fill")
                         .font(.footnote.weight(.semibold))
+                }
+            } else if !engine.usesCloud && !app.localAI.isReady {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("AIはこのiPhoneの中で動きます（ページの内容は外に送られません）。はじめにモデルを用意してください。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                    Button {
+                        dismiss()
+                        app.showModels = true
+                    } label: {
+                        Label("AIモデルを選ぶ・ダウンロード", systemImage: "arrow.down.circle.fill")
+                            .font(.footnote.weight(.semibold))
+                    }
+                    .buttonStyle(.borderedProminent)
                 }
             }
             VStack(alignment: .leading, spacing: 8) {
@@ -213,18 +227,18 @@ struct AssistantPanel: View {
                 .accessibilityLabel(engine.agentMode ? "ブラウザ操作: オン" : "ブラウザ操作: オフ")
 
                 Button {
-                    app.settings.webSearchEnabled.toggle()
+                    engine.webMode.toggle()
                 } label: {
                     Image(systemName: "globe")
                         .font(.body.weight(.semibold))
                         .frame(width: 36, height: 36)
-                        .background(app.settings.webSearchEnabled ? Theme.accent.opacity(0.18) : Color(.tertiarySystemFill), in: Circle())
-                        .foregroundStyle(app.settings.webSearchEnabled ? Theme.accent : Color.secondary)
+                        .background(engine.webMode ? Theme.accent.opacity(0.18) : Color(.tertiarySystemFill), in: Circle())
+                        .foregroundStyle(engine.webMode ? Theme.accent : Color.secondary)
                 }
-                .disabled(!app.settings.modelOption.supportsWebSearch)
-                .accessibilityLabel(app.settings.webSearchEnabled ? "Web検索: オン" : "Web検索: オフ")
+                .disabled(engine.usesCloud && !app.settings.modelOption.supportsWebSearch)
+                .accessibilityLabel(engine.webMode ? "Webで調べる: オン" : "Webで調べる: オフ")
 
-                TextField(engine.agentMode ? "質問、または「〜して」と指示…" : "このページについて質問…", text: $input, axis: .vertical)
+                TextField(engine.webMode ? "Webで調べたいこと…" : (engine.agentMode ? "質問、または「〜して」と指示…" : "このページについて質問…"), text: $input, axis: .vertical)
                     .lineLimit(1...5)
                     .focused($inputFocused)
                     .padding(.horizontal, 12)
@@ -275,17 +289,17 @@ struct AssistantPanel: View {
     }
 
     private func runSkill(_ skill: Skill, extra: String = "") {
-        if skill.usesAgent { engine.agentMode = true }
         let extraTrimmed = extra.trimmingCharacters(in: .whitespacesAndNewlines)
         let prompt = extraTrimmed.isEmpty ? skill.prompt : skill.prompt + "\n\n追加の指示: " + extraTrimmed
         let tabs: [BrowserTab]
         switch skill.scope {
         case .currentTab: tabs = attachedTabs
-        case .allTabs: tabs = app.tabs.tabs.filter { !$0.isBlank }
+        case .allTabs: tabs = app.tabs.currentSpaceTabs.filter { !$0.isBlank }
         case .none: tabs = []
         }
         input = ""
-        engine.send(prompt, attaching: tabs, displayText: "/" + skill.name + (extraTrimmed.isEmpty ? "" : " " + extraTrimmed))
+        engine.send(prompt, attaching: tabs, displayText: "/" + skill.name + (extraTrimmed.isEmpty ? "" : " " + extraTrimmed),
+                    mode: skill.usesAgent ? .agent : .chat)
     }
 }
 

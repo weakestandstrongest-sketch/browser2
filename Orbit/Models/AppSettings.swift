@@ -45,6 +45,17 @@ enum ApprovalPolicy: String, CaseIterable, Identifiable {
     }
 }
 
+enum AIProvider: String, CaseIterable, Identifiable {
+    case local, cloud
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .local: return "このiPhoneの中（ローカル）"
+        case .cloud: return "クラウド（Claude）"
+        }
+    }
+}
+
 enum OmniboxDefault: String, CaseIterable, Identifiable {
     case search, ai
     var id: String { rawValue }
@@ -69,7 +80,10 @@ final class AppSettings {
     var approvalPolicy: ApprovalPolicy { didSet { defaults.set(approvalPolicy.rawValue, forKey: "approvalPolicy") } }
     var searchEngine: SearchEngine { didSet { defaults.set(searchEngine.rawValue, forKey: "searchEngine") } }
     var omniboxDefault: OmniboxDefault { didSet { defaults.set(omniboxDefault.rawValue, forKey: "omniboxDefault") } }
-    var webSearchEnabled: Bool { didSet { defaults.set(webSearchEnabled, forKey: "webSearchEnabled") } }
+    /// 既定は端末の中の AI（まいにち と同じ）。クラウドは任意。
+    var aiProvider: AIProvider { didSet { defaults.set(aiProvider.rawValue, forKey: "aiProvider") } }
+    var autoArchive: AutoArchive { didSet { defaults.set(autoArchive.rawValue, forKey: "autoArchive") } }
+    var adBlock: Bool { didSet { defaults.set(adBlock, forKey: "adBlock") } }
     /// Free-form "about me" memory that is added to the system prompt (Dia-style personalization).
     var aboutMe: String { didSet { defaults.set(aboutMe, forKey: "aboutMe") } }
     /// Optional proxy / gateway base URL. Empty = https://api.anthropic.com
@@ -83,7 +97,9 @@ final class AppSettings {
         approvalPolicy = ApprovalPolicy(rawValue: defaults.string(forKey: "approvalPolicy") ?? "") ?? .sensitive
         searchEngine = SearchEngine(rawValue: defaults.string(forKey: "searchEngine") ?? "") ?? .google
         omniboxDefault = OmniboxDefault(rawValue: defaults.string(forKey: "omniboxDefault") ?? "") ?? .search
-        webSearchEnabled = defaults.object(forKey: "webSearchEnabled") as? Bool ?? true
+        aiProvider = AIProvider(rawValue: defaults.string(forKey: "aiProvider") ?? "") ?? .local
+        autoArchive = AutoArchive(rawValue: defaults.string(forKey: "autoArchive") ?? "") ?? .day
+        adBlock = defaults.object(forKey: "adBlock") as? Bool ?? true
         aboutMe = defaults.string(forKey: "aboutMe") ?? ""
         baseURL = defaults.string(forKey: "baseURL") ?? ""
     }

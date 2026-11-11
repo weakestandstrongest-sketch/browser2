@@ -15,17 +15,32 @@ final class BrowserTab: Identifiable {
     var canGoBack = false
     var canGoForward = false
     var thumbnail: UIImage? = nil
+    var spaceID: UUID
+    var isPinned = false
+    var lastViewed = Date()
+    let isPrivate: Bool
 
     @ObservationIgnored let webView: WKWebView
     @ObservationIgnored private var coordinator: TabCoordinator?
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
+    /// まだ読み込んでいない（復元したタブは、開くまで読み込まない）
+    @ObservationIgnored private var pendingLoad = false
+    @ObservationIgnored private var lastScrollY: CGFloat = 0
     /// Called when the committed URL changes, so the store can persist the session.
     @ObservationIgnored var onNavigationCommitted: (() -> Void)?
+    /// Called when a page has finished loading (for history).
+    @ObservationIgnored var onPageFinished: ((URL, String) -> Void)?
+    /// Called when the user scrolls the page down (true) or up (false).
+    @ObservationIgnored var onScroll: ((Bool) -> Void)?
 
-    init(id: UUID = UUID(), url: URL?, configuration: WKWebViewConfiguration) {
+    init(id: UUID = UUID(), url: URL?, configuration: WKWebViewConfiguration, loadNow: Bool = true,
+         spaceID: UUID = UUID(), title: String? = nil) {
         self.id = id
         self.url = url
-        self.title = URLParser.displayHost(url).isEmpty ? "新しいタブ" : URLParser.displayHost(url)
+        self.spaceID = spaceID
+        self.isPrivate = spaceID == BrowserSpace.privateID
+        let host = URLParser.displayHost(url)
+        self.title = title ?? (host.isEmpty ? "新しいタブ" : host)
         self.webView = WKWebView(frame: .zero, configuration: configuration)
         webView.allowsBackForwardNavigationGestures = true
         webView.allowsLinkPreview = true
@@ -38,7 +53,18 @@ final class BrowserTab: Identifiable {
         coordinator.installRefreshControl(on: webView)
 
         observeWebView()
-        if let url { webView.load(URLRequest(url: url)) }
+        if let url {
+            if loadNow { webView.load(URLRequest(url: url)) } else { pendingLoad = true }
+        }
+    }
+
+    /// 復元したタブを開いたときに読み込む。
+    func activate() {
+        lastViewed = Date()
+        if pendingLoad, let url {
+            pendingLoad = false
+            webView.load(URLRequest(url: url))
+        }
     }
 
     var isBlank: Bool { url == nil }
@@ -46,6 +72,7 @@ final class BrowserTab: Identifiable {
 
     func load(_ url: URL) {
         self.url = url
+        pendingLoad = false
         webView.load(URLRequest(url: url))
     }
 
@@ -103,7 +130,26 @@ final class BrowserTab: Identifiable {
             webView.observe(\.estimatedProgress, options: [.new]) { wv, _ in handler(wv) },
             webView.observe(\.canGoBack, options: [.new]) { wv, _ in handler(wv) },
             webView.observe(\.canGoForward, options: [.new]) { wv, _ in handler(wv) },
+            webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] scrollView, _ in
+                let y = scrollView.contentOffset.y
+                let dragging = scrollView.isDragging || scrollView.isDecelerating
+                MainActor.assumeIsolated { self?.scrolled(to: y, dragging: dragging) }
+            },
         ]
+    }
+
+    private func scrolled(to y: CGFloat, dragging: Bool) {
+        let delta = y - lastScrollY
+        guard dragging, abs(delta) > 14 else {
+            if !dragging { lastScrollY = y }
+            return
+        }
+        lastScrollY = y
+        if y < 40 {
+            onScroll?(false)
+        } else {
+            onScroll?(delta > 0)
+        }
     }
 
     fileprivate func syncFromWebView() {
@@ -125,6 +171,12 @@ final class BrowserTab: Identifiable {
     fileprivate func didCommitNavigation() {
         syncFromWebView()
         onNavigationCommitted?()
+    }
+
+    fileprivate func didFinishNavigation() {
+        syncFromWebView()
+        onNavigationCommitted?()
+        if let url, !isPrivate { onPageFinished?(url, displayTitle) }
     }
 }
 
@@ -154,7 +206,7 @@ final class TabCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         refreshControl.endRefreshing()
-        tab?.didCommitNavigation()
+        tab?.didFinishNavigation()
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

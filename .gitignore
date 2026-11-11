@@ -8,3 +8,4 @@ Config/Info.plist
 *.ipa
 Payload/
 .DS_Store
+Vendor/

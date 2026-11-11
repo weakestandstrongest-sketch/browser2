@@ -23,10 +23,25 @@ struct CommandBarView: View {
                             app.search(trimmed); dismiss()
                         }
                         row("sparkles", "AIに質問", trimmed) {
-                            app.ask(trimmed)
+                            app.ask(trimmed, mode: .chat)
                         }
-                        row("wand.and.stars", "AIに実行させる（エージェント）", trimmed) {
-                            app.ask(trimmed, agent: true)
+                        row("globe", "Webでまとめて調べる（AIが複数のページを読む）", trimmed) {
+                            app.ask(trimmed, mode: .web)
+                        }
+                        row("wand.and.stars", "AIに実行させる（ブラウザ操作）", trimmed) {
+                            app.ask(trimmed, mode: .agent)
+                        }
+                    }
+                }
+
+                let historyHits = isSkillCommand ? [] : app.history.search(trimmed)
+                if !historyHits.isEmpty && app.tabs.current?.url?.absoluteString != trimmed {
+                    Section("履歴") {
+                        ForEach(historyHits) { entry in
+                            row("clock.arrow.circlepath", entry.title.isEmpty ? entry.host : entry.title, entry.url) {
+                                if let url = URL(string: entry.url) { app.tabs.open(url) }
+                                dismiss()
+                            }
                         }
                     }
                 }
@@ -131,7 +146,7 @@ struct CommandBarView: View {
             app.openOrSearch(trimmed)
             dismiss()
         } else {
-            app.ask(trimmed)
+            app.ask(trimmed, mode: .auto)
         }
     }
 

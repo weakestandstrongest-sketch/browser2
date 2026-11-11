@@ -34,6 +34,11 @@ enum EngineError: Error {
     case refusal
 }
 
+/// どう答えるか。auto はメッセージの中身と画面の状態から決める。
+enum SendMode {
+    case auto, chat, agent, web
+}
+
 /// Runs conversations with Claude: chat about tabs (Dia-style) and an agent loop that
 /// operates the browser through client-side tools (Comet-style).
 @MainActor
@@ -44,24 +49,36 @@ final class AssistantEngine {
     var items: [ChatItem] = []
     var isRunning = false
     var statusText: String?
-    /// When on, Claude may operate the browser with tools.
+    /// When on, the AI may operate the browser.
     var agentMode = true
+    /// When on, questions are answered by searching the web and reading several pages (Arc's "Browse for Me").
+    var webMode = false
     var pendingApproval: ApprovalRequest?
     /// Bumped on every visible change so the chat view can auto-scroll.
     var revision = 0
 
     @ObservationIgnored let settings: AppSettings
     @ObservationIgnored let tabs: TabStore
+    @ObservationIgnored let localAI: LocalAI
+    /// ローカルAIとの会話の履歴（質問と答えの文字だけ。ページの本文は毎回つけ直す）
+    @ObservationIgnored var localHistory: [LLMMessage] = []
     @ObservationIgnored weak var agentTab: BrowserTab?
     @ObservationIgnored var lastElements: [Int: PageSnapshot.Element] = [:]
     @ObservationIgnored private var messages: [JSONValue] = []
     @ObservationIgnored private var task: Task<Void, Never>?
-    @ObservationIgnored private var currentAssistantItemID: UUID?
+    @ObservationIgnored var currentAssistantItemID: UUID?
     @ObservationIgnored private var approvalContinuation: CheckedContinuation<Bool, Never>?
 
-    init(settings: AppSettings, tabs: TabStore) {
+    init(settings: AppSettings, tabs: TabStore, localAI: LocalAI) {
         self.settings = settings
         self.tabs = tabs
+        self.localAI = localAI
+    }
+
+    var usesCloud: Bool { settings.aiProvider == .cloud }
+
+    var modelLabel: String {
+        usesCloud ? settings.modelOption.name : localAI.statusLabel
     }
 
     var hasConversation: Bool { !items.isEmpty }
@@ -69,33 +86,42 @@ final class AssistantEngine {
     // MARK: Public API
 
     /// Sends a message. `attachTabs` are read and included as context (Dia's "chat with your tabs").
-    func send(_ text: String, attaching attachTabs: [BrowserTab], displayText: String? = nil) {
+    func send(_ text: String, attaching attachTabs: [BrowserTab], displayText: String? = nil, mode: SendMode = .auto) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, !isRunning else { return }
-        guard settings.hasAPIKey else {
-            items.append(ChatItem(kind: .error, text: "設定（⚙︎）でAnthropic APIキーを入力してください。"))
+        if usesCloud && !settings.hasAPIKey {
+            items.append(ChatItem(kind: .error, text: "クラウドAIを使うには、設定でAnthropic APIキーを入力してください。"))
             revision += 1
             return
         }
+        if mode == .agent { agentMode = true }
         isRunning = true
-        statusText = "ページを読み込んでいます…"
+        statusText = "準備しています…"
         agentTab = tabs.current
         lastElements = [:]
+        let display = displayText ?? trimmed
         task = Task { [weak self] in
             guard let self else { return }
-            await self.run(text: trimmed, displayText: displayText ?? trimmed, attachTabs: attachTabs)
+            if self.usesCloud {
+                if mode == .web { self.webMode = true }
+                await self.run(text: trimmed, displayText: display, attachTabs: attachTabs)
+            } else {
+                await self.runLocal(text: trimmed, displayText: display, attachTabs: attachTabs, mode: mode)
+            }
             self.finishRun()
         }
     }
 
     func stop() {
         resolveApproval(false)
+        localAI.stop()
         task?.cancel()
     }
 
     func reset() {
         guard !isRunning else { return }
         messages = []
+        localHistory = []
         items = []
         lastElements = [:]
         revision += 1
@@ -268,7 +294,7 @@ final class AssistantEngine {
         }
         lines.append("開いているタブ数: \(tabs.tabs.count)")
         lines.append("ブラウザ操作: \(agentMode ? "許可" : "オフ（ツールを使わずに回答する）")")
-        let webSearchOn = settings.webSearchEnabled && settings.modelOption.supportsWebSearch
+        let webSearchOn = webMode && settings.modelOption.supportsWebSearch
         lines.append("Web検索: \(webSearchOn ? "利用可" : "オフ")")
         lines.append("</context>")
         return lines.joined(separator: "\n")
@@ -314,7 +340,7 @@ final class AssistantEngine {
         }
     }
 
-    private func assistantItemIndex() -> Int? {
+    func assistantItemIndex() -> Int? {
         guard let id = currentAssistantItemID else { return nil }
         return items.firstIndex { $0.id == id }
     }
