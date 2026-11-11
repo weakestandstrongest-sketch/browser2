@@ -22,6 +22,7 @@ jobs:
         run: xcodegen generate
 
       - name: Build (unsigned, Release, iphoneos)
+        timeout-minutes: 15
         run: |
           set -o pipefail
           xcodebuild \
@@ -34,7 +35,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            build 2>&1 | tee build.log | grep -E "error:|warning: .*Orbit/|BUILD (SUCCEEDED|FAILED)" || true
+            OTHER_SWIFT_FLAGS='$(inherited) -Xfrontend -warn-long-expression-type-checking=300' \
+            build 2>&1 | tee build.log | grep -E "error:|warning: .*Orbit/|type-check|BUILD (SUCCEEDED|FAILED)" || true
           grep -q "BUILD SUCCEEDED" build.log
 
       - name: Package unsigned IPA
