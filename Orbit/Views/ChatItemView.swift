@@ -141,7 +141,7 @@ struct MarkdownText: View {
         switch block {
         case .heading(let level, let s):
             inline(s)
-                .font(level <= 1 ? .title3.weight(.bold) : level == 2 ? .headline : .subheadline.weight(.semibold))
+                .font(level <= 1 ? Font.title3.weight(.bold) : (level == 2 ? Font.headline : Font.subheadline.weight(.semibold)))
                 .padding(.top, 4)
         case .bullet(let indent, let s):
             HStack(alignment: .firstTextBaseline, spacing: 6) {

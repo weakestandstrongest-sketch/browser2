@@ -3,11 +3,16 @@ import SwiftUI
 struct StartPageView: View {
     @Environment(AppModel.self) private var app
 
-    private let suggestions: [(icon: String, text: String)] = [
-        ("newspaper", "今日の主要なニュースを3つ教えて"),
-        ("fork.knife", "近くで評判のいいランチの探し方を教えて"),
-        ("airplane", "週末の小旅行プランを考えて"),
-        ("book", "量子コンピュータをやさしく説明して"),
+    private struct Suggestion: Hashable {
+        let icon: String
+        let text: String
+    }
+
+    private let suggestions: [Suggestion] = [
+        Suggestion(icon: "newspaper", text: "今日の主要なニュースを3つ教えて"),
+        Suggestion(icon: "fork.knife", text: "近くで評判のいいランチの探し方を教えて"),
+        Suggestion(icon: "airplane", text: "週末の小旅行プランを考えて"),
+        Suggestion(icon: "book", text: "量子コンピュータをやさしく説明して"),
     ]
 
     var body: some View {
@@ -41,7 +46,7 @@ struct StartPageView: View {
                     Text("AIに聞いてみる")
                         .font(.footnote.weight(.semibold))
                         .foregroundStyle(.secondary)
-                    ForEach(suggestions, id: \.text) { item in
+                    ForEach(suggestions, id: \.self) { item in
                         Button {
                             app.ask(item.text)
                         } label: {

@@ -14,7 +14,7 @@ final class BrowserTab: Identifiable {
     var progress: Double = 0
     var canGoBack = false
     var canGoForward = false
-    var thumbnail: UIImage?
+    var thumbnail: UIImage? = nil
 
     @ObservationIgnored let webView: WKWebView
     @ObservationIgnored private var coordinator: TabCoordinator?

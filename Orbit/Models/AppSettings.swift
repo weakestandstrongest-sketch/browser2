@@ -76,6 +76,7 @@ final class AppSettings {
     var baseURL: String { didSet { defaults.set(baseURL, forKey: "baseURL") } }
 
     init() {
+        let defaults = UserDefaults.standard
         apiKey = Keychain.get("anthropic-api-key") ?? ""
         model = defaults.string(forKey: "model") ?? ClaudeModelOption.all[0].id
         effort = EffortLevel(rawValue: defaults.string(forKey: "effort") ?? "") ?? .medium
