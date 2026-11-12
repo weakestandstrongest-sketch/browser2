@@ -24,9 +24,7 @@ struct StartPageView: View {
         let space = app.tabs.currentSpace
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
-                Circle().fill(space.theme.gradient).frame(width: 10, height: 10)
-                Text(space.isPrivate ? "private" : "orbit")
-                    .font(Theme.display(34))
+                Wordmark(text: space.isPrivate ? "private" : "orbit", muted: space.isPrivate)
                 Spacer()
                 circleButton("eyeglasses", "プライベートタブ") { app.tabs.newTab(in: BrowserSpace.privateID) }
                 circleButton("square.on.square", "タブ") { app.showSidebar = true }

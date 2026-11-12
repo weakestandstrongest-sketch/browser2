@@ -20,6 +20,30 @@ enum Theme {
     }
 }
 
+/// ロゴ：シンボルマーク（切れた O）と、丸みのある太めの文字を字間を詰めて並べる。
+/// 細い標準の書体と色の点だけだと安っぽく見えたので、アイコンと同じ印を使って一体にする。
+struct Wordmark: View {
+    var text = "orbit"
+    var size: CGFloat = 32
+    var muted = false
+
+    var body: some View {
+        HStack(spacing: size * 0.18) {
+            OrbView(size: size * 1.05, color: muted ? .secondary : Theme.accent)
+                .padding(.horizontal, -size * 0.2) // 印の余白を詰めて、文字と一続きに見せる
+            Text(text)
+                .font(.system(size: size, weight: .semibold, design: .rounded))
+                .tracking(-size * 0.035)
+                .foregroundStyle(
+                    LinearGradient(colors: [Color.primary, Color.primary.opacity(0.72)], startPoint: .top, endPoint: .bottom)
+                )
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(text)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
 /// Orbit のシンボルマーク「切れた O」：右上が切れた太い輪と、その切れ目の衛星。
 /// AI が動いている間は、輪ごと回る。
 struct OrbView: View {
