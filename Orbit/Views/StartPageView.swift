@@ -1,163 +1,117 @@
 import SwiftUI
 
-/// 新しいタブ。光の背景の上に直接置かれる：あいさつ、AI への入り口、スピードダイヤル。
+/// 新しいタブ（Comet / Perplexity のホームのように）：ワードマーク、うっすらした印、候補の一覧。
+/// 入力は下のバーから。
 struct StartPageView: View {
     @Environment(AppModel.self) private var app
 
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 4)
-
-    private var greeting: String {
-        switch Calendar.current.component(.hour, from: Date()) {
-        case 5..<11: return "おはようございます"
-        case 11..<18: return "こんにちは"
-        default: return "こんばんは"
-        }
+    private struct Suggestion: Hashable {
+        let text: String
+        let mode: SendMode
     }
+
+    private let suggestions = [
+        Suggestion(text: "今日のニュースを調べてまとめて", mode: .web),
+        Suggestion(text: "量子コンピュータをやさしく説明して", mode: .chat),
+        Suggestion(text: "週末の小旅行プランを考えて", mode: .chat),
+    ]
 
     var body: some View {
         let space = app.tabs.currentSpace
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Image(systemName: space.icon)
-                        Text(space.name)
-                    }
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    Text(space.isPrivate ? "プライベート" : greeting)
-                        .font(Theme.display(33))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                        .padding(.top, 2)
-                    Text(space.isPrivate ? "このタブの履歴と Cookie は、閉じると消えます。" : Date().formatted(date: .complete, time: .omitted))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.top, 56)
-
-                askCard(space)
-
-                if !space.isPrivate {
-                    speedDial
-                    frequentSites
-                }
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Circle().fill(space.theme.gradient).frame(width: 10, height: 10)
+                Text(space.isPrivate ? "private" : "orbit")
+                    .font(Theme.display(34))
+                Spacer()
+                circleButton("eyeglasses", "プライベートタブ") { app.tabs.newTab(in: BrowserSpace.privateID) }
+                circleButton("square.on.square", "タブ") { app.showSidebar = true }
             }
-            .padding(.horizontal, 14)
-            .padding(.bottom, 30)
-        }
-        .scrollIndicators(.hidden)
-    }
-
-    /// AI への入り口。タップでコマンドバー、下の例はそのまま実行。
-    private func askCard(_ space: BrowserSpace) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
-        return VStack(alignment: .leading, spacing: 14) {
-            Button {
-                app.showCommandBar = true
-            } label: {
-                HStack(spacing: 12) {
-                    OrbView(size: 40, animating: app.assistant.isRunning)
-                    Text("何でも聞く、探す、任せる")
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                    Spacer(minLength: 0)
-                }
-            }
-            .buttonStyle(.plain)
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    example("globe", "今日のニュースを調べてまとめて", .web)
-                    example("lightbulb", "量子コンピュータをやさしく説明して", .chat)
-                    example("airplane", "週末の小旅行プランを考えて", .chat)
-                }
-            }
+            .padding(.top, 14)
 
             if !app.assistant.usesCloud && !app.localAI.isReady {
                 Button {
                     app.showModels = true
                 } label: {
-                    Label("まずAIモデルを用意する", systemImage: "arrow.down.circle.fill")
-                        .font(.footnote.weight(.semibold))
+                    HStack {
+                        Image(systemName: "arrow.down.circle")
+                        Text("AIモデルを用意する")
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.footnote)
+                    }
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.accent)
+                    .padding(.horizontal, 16)
+                    .frame(height: 46)
+                    .background(Theme.accent.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().strokeBorder(Theme.accent.opacity(0.3), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 14)
+            }
+
+            Spacer(minLength: 12)
+            OrbView(size: 64, animating: app.assistant.isRunning)
+                .opacity(0.28)
+                .frame(maxWidth: .infinity)
+            Spacer(minLength: 12)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if !space.isPrivate {
+                        let sites = app.history.speedDial.map { ($0.title, $0.url) } + app.history.topSites(4).map { ($0.host, $0.url) }
+                        if !sites.isEmpty {
+                            ScrollView(.horizontal, showsIndicators: false) {
+                                HStack(spacing: 16) {
+                                    ForEach(Array(sites.prefix(8).enumerated()), id: \.offset) { _, site in
+                                        SiteTile(title: site.0, url: URL(string: site.1)) {
+                                            if let url = URL(string: site.1) { app.tabs.open(url) }
+                                        }
+                                        .frame(width: 60)
+                                    }
+                                }
+                                .padding(.vertical, 6)
+                            }
+                            .padding(.bottom, 10)
+                        }
+                    }
+                    ForEach(suggestions, id: \.self) { item in
+                        Button {
+                            app.ask(item.text, mode: item.mode)
+                        } label: {
+                            HStack(spacing: 14) {
+                                Image(systemName: item.mode == .web ? "globe" : "magnifyingglass")
+                                    .foregroundStyle(.secondary)
+                                    .frame(width: 22)
+                                Text(item.text)
+                                    .font(.body)
+                                    .foregroundStyle(Color.primary.opacity(0.9))
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .frame(height: 44)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
+            .scrollIndicators(.hidden)
+            .frame(maxHeight: 250)
         }
-        .padding(16)
-        .background(Color(.secondarySystemGroupedBackground), in: shape)
-        .overlay(shape.strokeBorder(Theme.gradient, lineWidth: 1.2))
-        .background {
-            shape.fill(Theme.gradient).padding(.horizontal, 24).blur(radius: 22).opacity(0.4).offset(y: 12)
-        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 6)
     }
 
-    private func example(_ icon: String, _ text: String, _ mode: SendMode) -> some View {
-        Button {
-            app.ask(text, mode: mode)
-        } label: {
-            Label(text, systemImage: icon)
-                .font(.footnote.weight(.medium))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 9)
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
+    private func circleButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17))
+                .frame(width: 46, height: 46)
+                .glass(Circle())
         }
         .buttonStyle(.plain)
-    }
-
-    private func label(_ text: String) -> some View {
-        Text(text).font(.caption.weight(.medium)).foregroundStyle(.secondary).textCase(nil)
-    }
-
-    @ViewBuilder
-    private var speedDial: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            label("スピードダイヤル")
-            if app.history.speedDial.isEmpty {
-                Text("ページのメニュー（…）から、よく使うサイトを追加できます。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            } else {
-                LazyVGrid(columns: columns, spacing: 14) {
-                    ForEach(app.history.speedDial) { item in
-                        SiteTile(title: item.title, url: URL(string: item.url)) {
-                            if let url = URL(string: item.url) { app.tabs.open(url) }
-                        }
-                        .contextMenu {
-                            Button(role: .destructive) {
-                                app.history.removeFromSpeedDial(item)
-                            } label: { Label("削除", systemImage: "trash") }
-                        }
-                    }
-                }
-            }
-        }
-        .padding(.top, 6)
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    @ViewBuilder
-    private var frequentSites: some View {
-        let sites = app.history.topSites(8)
-        if !sites.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                label("よく見るサイト")
-                LazyVGrid(columns: columns, spacing: 14) {
-                    ForEach(sites) { entry in
-                        SiteTile(title: entry.host, url: URL(string: entry.url)) {
-                            if let url = URL(string: entry.url) { app.tabs.open(url) }
-                        }
-                        .contextMenu {
-                            Button {
-                                if let url = URL(string: entry.url) { app.history.addToSpeedDial(title: entry.host, url: url) }
-                            } label: { Label("スピードダイヤルに追加", systemImage: "square.grid.2x2") }
-                        }
-                    }
-                }
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .glass(RoundedRectangle(cornerRadius: 26, style: .continuous))
-        }
+        .accessibilityLabel(label)
     }
 }
 

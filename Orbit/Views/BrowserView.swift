@@ -28,7 +28,7 @@ struct BrowserView: View {
                         .scaleEffect(1 - 0.08 * progress, anchor: .leading)
                         .offset(x: progress * width)
 
-                    if !app.showSidebar && !app.showCommandBar {
+                    if !app.showSidebar && !app.showCommandBar && app.tabs.pickingTabID == nil {
                         edgeStrips(sidebarWidth: width)
                     }
                 }
@@ -48,6 +48,13 @@ struct BrowserView: View {
         .animation(.snappy(duration: 0.25), value: app.tabs.chromeCollapsed)
         .sheet(isPresented: $app.showSettings) {
             SettingsView().environment(app)
+        }
+        .sheet(isPresented: $app.showPageMenu) {
+            PageMenuSheet()
+                .environment(app)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.clear)
         }
         .sheet(isPresented: $app.showSkills) {
             SkillsView().environment(app)
@@ -185,26 +192,27 @@ struct BrowserView: View {
                         }
                 )
         }
-        .padding(.bottom, 110)
+        .padding(.bottom, 140)
     }
 }
 
-/// 下に浮かぶガラスのカプセル。サイドバー・アドレス・AI の3つだけ。
+/// Comet と同じ2段の下バー。上段：サイトの設定・アドレス・再読み込み ＋ AI。下段：戻る・進む・新しいタブ・タブ・メニュー。
 struct CommandCapsule: View {
     @Environment(AppModel.self) private var app
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         let tab = app.tabs.current
-        let space = app.tabs.currentSpace
-        if app.tabs.chromeCollapsed {
+        if app.tabs.pickingTabID != nil {
+            pickerBar
+        } else if app.tabs.chromeCollapsed {
             Button {
                 app.tabs.chromeCollapsed = false
             } label: {
                 HStack(spacing: 7) {
-                    OrbView(size: 12)
+                    Circle().fill(Theme.accent).frame(width: 7, height: 7)
                     Text(addressText(tab))
-                        .font(.caption.weight(.semibold))
+                        .font(.caption.weight(.medium))
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 14)
@@ -213,125 +221,94 @@ struct CommandCapsule: View {
             }
             .buttonStyle(.plain)
         } else {
-            VStack(spacing: 8) {
-                if let tab, !tab.isBlank {
-                    suggestions
-                }
-                HStack(spacing: 0) {
-                    sidebarButton(space)
-                    Rectangle().fill(Color.primary.opacity(0.1)).frame(width: 1, height: 22)
-                    address(tab: tab, space: space)
+            let shape = RoundedRectangle(cornerRadius: 34, style: .continuous)
+            VStack(spacing: 4) {
+                HStack(spacing: 10) {
+                    address(tab)
                     Button {
                         app.showAssistant = true
                     } label: {
-                        OrbView(size: 36, animating: app.assistant.isRunning)
-                            .frame(width: 50, height: 54)
-                            .contentShape(Rectangle())
+                        OrbView(size: 30, animating: app.assistant.isRunning)
+                            .frame(width: 50, height: 50)
+                            .background(Color.primary.opacity(0.08), in: Circle())
                     }
                     .buttonStyle(.plain)
                     .contextMenu { quickActions(tab) }
                     .accessibilityLabel("AIアシスタント")
                 }
-                .frame(height: 54)
-                .background(Color(.secondarySystemGroupedBackground), in: Capsule())
-                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
-                .overlay {
-                    if app.assistant.isRunning {
-                        GlowBorder(shape: Capsule(), lineWidth: 2)
-                    }
-                }
-                .background {
-                    // Dia のように、入力欄の下から虹色の光がにじむ
-                    Capsule()
-                        .fill(Theme.gradient)
-                        .padding(.horizontal, 26)
-                        .blur(radius: 16)
-                        .opacity(0.5)
-                        .offset(y: 8)
+                HStack(spacing: 0) {
+                    bar("chevron.backward", "戻る", enabled: tab?.canGoBack ?? false) { tab?.goBack() }
+                    bar("chevron.forward", "進む", enabled: tab?.canGoForward ?? false) { tab?.goForward() }
+                    bar("plus", "新しいタブ") { app.tabs.newTab() }
+                    bar("square.on.square", "タブ") { app.showSidebar = true }
+                    bar("ellipsis", "メニュー") { app.showPageMenu = true }
                 }
             }
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 4)
+            .glass(shape)
+            .overlay {
+                if app.assistant.isRunning {
+                    GlowBorder(shape: shape, lineWidth: 2)
+                }
+            }
+            .padding(.horizontal, 4)
         }
     }
 
-    /// ページに合わせた提案（Comet）。タップですぐ実行。
-    private var suggestions: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(app.skills.skills.prefix(4)) { skill in
-                    Button {
-                        app.run(skill)
-                    } label: {
-                        Label(skill.name, systemImage: skill.icon)
-                            .font(.caption.weight(.medium))
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 7)
-                            .background(Color(.secondarySystemGroupedBackground).opacity(0.9), in: Capsule())
-                            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
-    private func sidebarButton(_ space: BrowserSpace) -> some View {
-        Button {
-            app.showSidebar = true
-        } label: {
-            HStack(spacing: 5) {
-                Image(systemName: space.isPrivate ? "eyeglasses" : "sidebar.left")
-                    .font(.subheadline.weight(.medium))
-                Text("\(app.tabs.currentSpaceTabs.count)")
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            .frame(width: 58, height: 54)
-            .contentShape(Rectangle())
+    private func bar(_ symbol: String, _ label: String, enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 19, weight: .regular))
+                .frame(maxWidth: .infinity)
+                .frame(height: 44)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("サイドバー")
+        .disabled(!enabled)
+        .foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.45))
+        .accessibilityLabel(label)
     }
 
     /// 左右にスワイプすると隣のタブへ。タップで検索・URL・AI への質問。
-    private func address(tab: BrowserTab?, space: BrowserSpace) -> some View {
-        HStack(spacing: 8) {
-            if let tab, tab.canGoBack {
-                Button {
-                    tab.goBack()
-                } label: {
-                    Image(systemName: "chevron.backward")
-                        .font(.subheadline.weight(.semibold))
-                        .frame(width: 26, height: 40)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("戻る")
-            }
-            Image(systemName: (tab?.isBlank ?? true) ? "sparkle.magnifyingglass" : (tab?.url?.scheme == "https" ? "lock.fill" : "globe"))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    private func address(_ tab: BrowserTab?) -> some View {
+        HStack(spacing: 4) {
+            siteMenu(tab)
+            Spacer(minLength: 0)
             Text(addressText(tab))
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle((tab?.isBlank ?? true) ? Color.secondary : Color.primary)
+                .font(.body)
+                .foregroundStyle((tab?.isBlank ?? true) ? Color.secondary : Color.primary.opacity(0.85))
                 .lineLimit(1)
             Spacer(minLength: 0)
-            pageMenu(tab)
+            Button {
+                if let tab { tab.isLoading ? tab.stopLoading() : tab.reload() }
+            } label: {
+                Image(systemName: (tab?.isLoading ?? false) ? "xmark" : "arrow.clockwise")
+                    .font(.system(size: 16, weight: .medium))
+                    .frame(width: 44, height: 50)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .opacity((tab?.isBlank ?? true) ? 0 : 1)
+            .accessibilityLabel("再読み込み")
         }
-        .padding(.leading, 12)
-        .frame(height: 54)
+        .frame(height: 50)
+        .background(Color.primary.opacity(0.08), in: Capsule())
         .overlay(alignment: .bottomLeading) {
             if let tab, tab.isLoading {
                 GeometryReader { geo in
                     Capsule()
-                        .fill(space.theme.gradient)
+                        .fill(Theme.accent)
                         .frame(width: max(8, geo.size.width * tab.progress), height: 2.5)
                         .frame(maxHeight: .infinity, alignment: .bottom)
                 }
-                .padding(.horizontal, 8)
+                .padding(.horizontal, 22)
                 .allowsHitTesting(false)
             }
         }
-        .contentShape(Rectangle())
+        .contentShape(Capsule())
         .onTapGesture { app.showCommandBar = true }
         .offset(x: dragOffset)
         .simultaneousGesture(
@@ -350,43 +327,68 @@ struct CommandCapsule: View {
         )
     }
 
-    private func pageMenu(_ tab: BrowserTab?) -> some View {
+    /// このサイトの設定（Comet の左のつまみ）
+    private func siteMenu(_ tab: BrowserTab?) -> some View {
         Menu {
-            if let tab, let url = tab.url {
+            if let tab, !tab.isBlank {
                 Button {
-                    tab.isLoading ? tab.stopLoading() : tab.reload()
-                } label: { Label(tab.isLoading ? "読み込みを中止" : "再読み込み", systemImage: tab.isLoading ? "xmark" : "arrow.clockwise") }
-                if tab.canGoForward {
+                    app.tabs.startPicking()
+                } label: { Label("気を逸らす項目を非表示", systemImage: "eye.slash") }
+                if app.tabs.hiddenCountForCurrent > 0 {
                     Button {
-                        tab.goForward()
-                    } label: { Label("進む", systemImage: "chevron.forward") }
+                        app.tabs.resetHidden()
+                    } label: { Label("非表示の項目を元に戻す（\(app.tabs.hiddenCountForCurrent)）", systemImage: "eye") }
                 }
-                ShareLink(item: url) { Label("共有", systemImage: "square.and.arrow.up") }
                 Button {
-                    UIPasteboard.general.url = url
-                } label: { Label("URLをコピー", systemImage: "doc.on.doc") }
-                Button {
-                    app.history.addToSpeedDial(title: tab.displayTitle, url: url)
-                } label: { Label("スピードダイヤルに追加", systemImage: "square.grid.2x2") }
-                Button {
-                    app.tabs.togglePin(tab)
-                } label: { Label(tab.isPinned ? "ピン留めを外す" : "ピン留め", systemImage: tab.isPinned ? "pin.slash" : "pin") }
+                    tab.toggleDesktopMode()
+                } label: { Label(tab.desktopMode ? "モバイル用サイトに戻す" : "デスクトップサイトをリクエスト", systemImage: "desktopcomputer") }
                 Divider()
             }
-            Button {
-                app.tabs.newTab()
-            } label: { Label("新しいタブ", systemImage: "plus") }
-            Button {
-                app.tabs.newTab(in: BrowserSpace.privateID)
-            } label: { Label("プライベートタブ", systemImage: "eyeglasses") }
+            Picker("広告ブロック", selection: Binding(
+                get: { app.settings.adBlockLevel },
+                set: { level in
+                    app.settings.adBlockLevel = level
+                    Task {
+                        await app.tabs.setAdBlock(level)
+                        app.tabs.current?.reload()
+                    }
+                })) {
+                ForEach(AdBlockLevel.allCases) { level in
+                    Text("広告ブロック：\(level.label)").tag(level)
+                }
+            }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
-                .frame(width: 38, height: 40)
+            Image(systemName: app.tabs.isPrivate ? "eyeglasses" : "slider.vertical.3")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(app.settings.adBlockLevel == .off ? Color.secondary : Theme.accent)
+                .frame(width: 44, height: 50)
                 .contentShape(Rectangle())
         }
-        .accessibilityLabel("ページのメニュー")
+        .accessibilityLabel("このサイトの設定")
+    }
+
+    /// 「気を逸らす項目を非表示」で項目を選んでいるあいだのバー
+    private var pickerBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "eye.slash")
+                .foregroundStyle(Theme.accent)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("非表示にする項目をタップ").font(.subheadline.weight(.semibold))
+                Text("このサイトで \(app.tabs.hiddenCountForCurrent) 件を非表示中")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            Button("元に戻す") { app.tabs.undoLastHidden() }
+                .disabled(app.tabs.hiddenCountForCurrent == 0)
+            Button("完了") { app.tabs.stopPicking() }
+                .fontWeight(.semibold)
+        }
+        .font(.subheadline)
+        .padding(.horizontal, 18)
+        .frame(height: 64)
+        .glass(RoundedRectangle(cornerRadius: 30, style: .continuous))
+        .padding(.horizontal, 4)
     }
 
     @ViewBuilder
@@ -405,7 +407,7 @@ struct CommandCapsule: View {
     }
 
     private func addressText(_ tab: BrowserTab?) -> String {
-        guard let tab, !tab.isBlank else { return "検索、URL、AIに質問" }
+        guard let tab, !tab.isBlank else { return "検索またはAIに質問" }
         return URLParser.displayHost(tab.url)
     }
 }

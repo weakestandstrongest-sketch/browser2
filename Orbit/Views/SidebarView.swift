@@ -7,6 +7,7 @@ struct SidebarView: View {
     @State private var editingSpace: BrowserSpace?
     @State private var creatingSpace = false
     @State private var showArchive = false
+    @State private var deletingSpace: BrowserSpace?
 
     private let pinColumns = Array(repeating: GridItem(.flexible(), spacing: 10), count: 4)
 
@@ -107,6 +108,20 @@ struct SidebarView: View {
         .sheet(isPresented: $showArchive) {
             ArchiveView().environment(app)
         }
+        .confirmationDialog("スペース「\(deletingSpace?.name ?? "")」を削除しますか？",
+                            isPresented: Binding(get: { deletingSpace != nil }, set: { if !$0 { deletingSpace = nil } }),
+                            titleVisibility: .visible) {
+            Button("スペースとその中のタブを削除", role: .destructive) {
+                if let space = deletingSpace { app.tabs.deleteSpace(space, keepTabs: false) }
+                deletingSpace = nil
+            }
+            Button("スペースだけ削除（タブは残す）") {
+                if let space = deletingSpace { app.tabs.deleteSpace(space, keepTabs: true) }
+                deletingSpace = nil
+            }
+        } message: {
+            Text("ピン留めも含めて、このスペースがなくなります。")
+        }
     }
 
     private func select(_ tab: BrowserTab) {
@@ -124,7 +139,7 @@ struct SidebarView: View {
                     Image(systemName: space.icon).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
                 }
                 Text(space.name)
-                    .font(Theme.display(30))
+                    .font(.system(size: 28, weight: .regular))
                     .lineLimit(1)
                 Text(space.isPrivate ? "履歴を残しません" : "\(count)個のタブ")
                     .font(.caption)
@@ -145,6 +160,11 @@ struct SidebarView: View {
                 Button(role: .destructive) {
                     app.tabs.closeAll(in: space.id)
                 } label: { Label("ピン留め以外のタブを閉じる", systemImage: "xmark.square") }
+                if !space.isPrivate && app.tabs.spaces.count > 1 {
+                    Button(role: .destructive) {
+                        deletingSpace = space
+                    } label: { Label("このスペースを削除", systemImage: "trash") }
+                }
             } label: {
                 Image(systemName: "ellipsis")
                     .font(.body.weight(.semibold))
@@ -259,6 +279,11 @@ struct SidebarView: View {
                                 Button {
                                     editingSpace = space
                                 } label: { Label("編集", systemImage: "pencil") }
+                                if app.tabs.spaces.count > 1 {
+                                    Button(role: .destructive) {
+                                        deletingSpace = space
+                                    } label: { Label("スペースを削除", systemImage: "trash") }
+                                }
                             }
                         }
                         .accessibilityLabel(space.name)

@@ -1,16 +1,49 @@
 import Foundation
 import WebKit
 
+enum AdBlockLevel: String, CaseIterable, Identifiable, Codable {
+    case off, standard, strong
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .off: return "オフ"
+        case .standard: return "標準"
+        case .strong: return "強力"
+        }
+    }
+}
+
+/// ページの中の「非表示にする項目」のタップを受け取る。
+@MainActor
+final class PickerBridge: NSObject, WKScriptMessageHandler {
+    var onPick: ((WKWebView?, String) -> Void)?
+
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if let selector = message.body as? String, !selector.isEmpty {
+            onPick?(message.webView, selector)
+        }
+    }
+}
+
 /// すべてのタブで共有する WebView の設定（通常とプライベート）と、広告ブロック。
 @MainActor
 final class BrowserConfiguration {
     let standard: WKWebViewConfiguration
     let privateMode: WKWebViewConfiguration
-    private(set) var blockList: WKContentRuleList?
+    let pickerBridge = PickerBridge()
+    private var baseList: WKContentRuleList?
+    private var strongList: WKContentRuleList?
+    private var onlineList: WKContentRuleList?
+    /// オンラインのリストから読み込んだドメインの数（設定に表示）
+    private(set) var onlineDomainCount = 0
+    private(set) var onlineUpdatedAt: Date?
 
     init() {
         standard = Self.make(store: .default())
         privateMode = Self.make(store: .nonPersistent())
+        for config in [standard, privateMode] {
+            config.userContentController.add(pickerBridge, contentWorld: .defaultClient, name: "orbitHide")
+        }
     }
 
     private static func make(store: WKWebsiteDataStore) -> WKWebViewConfiguration {
@@ -21,63 +54,201 @@ final class BrowserConfiguration {
         return config
     }
 
-    /// 広告・トラッカーのブロックリストを用意する（Opera のような内蔵広告ブロック）。
-    func prepareBlockList() async -> WKContentRuleList? {
-        if let blockList { return blockList }
-        let json = ContentBlocker.rulesJSON()
-        let list: WKContentRuleList? = await withCheckedContinuation { continuation in
-            WKContentRuleListStore.default().compileContentRuleList(
-                forIdentifier: "orbit-adblock-v1", encodedContentRuleList: json
-            ) { list, _ in
+    // MARK: Ad blocking
+
+    private func compile(_ id: String, _ json: String) async -> WKContentRuleList? {
+        await withCheckedContinuation { continuation in
+            WKContentRuleListStore.default().compileContentRuleList(forIdentifier: id, encodedContentRuleList: json) { list, _ in
                 continuation.resume(returning: list)
             }
         }
-        blockList = list
-        return list
     }
 
-    func applyBlocking(_ enabled: Bool, to webView: WKWebView) {
+    /// level に必要なリストを用意する。strong ではオンラインの広告サーバー一覧も取り込む。
+    func prepare(_ level: AdBlockLevel, refreshOnline: Bool = false) async {
+        guard level != .off else { return }
+        if baseList == nil {
+            baseList = await compile("orbit-adblock-base-v2", ContentBlocker.rulesJSON(domains: ContentBlocker.domains, selectors: ContentBlocker.hiddenSelectors))
+        }
+        guard level == .strong else { return }
+        if strongList == nil {
+            strongList = await compile("orbit-adblock-strong-v2", ContentBlocker.strongRulesJSON())
+        }
+        if onlineList == nil || refreshOnline {
+            let domains = await ContentBlocker.onlineDomains(forceRefresh: refreshOnline)
+            onlineDomainCount = domains.count
+            onlineUpdatedAt = ContentBlocker.onlineFileDate()
+            if !domains.isEmpty {
+                onlineList = await compile("orbit-adblock-online-v1", ContentBlocker.rulesJSON(domains: domains, selectors: []))
+            }
+        }
+    }
+
+    func applyBlocking(_ level: AdBlockLevel, to webView: WKWebView) {
         let controller = webView.configuration.userContentController
         controller.removeAllContentRuleLists()
-        if enabled, let blockList { controller.add(blockList) }
+        guard level != .off else { return }
+        if let baseList { controller.add(baseList) }
+        if level == .strong {
+            if let strongList { controller.add(strongList) }
+            if let onlineList { controller.add(onlineList) }
+        }
     }
 }
 
 enum ContentBlocker {
-    /// よく使われる広告・トラッキングのドメイン（少なめの内蔵リスト）。
+    /// 内蔵の広告・トラッキングのドメイン。
     static let domains = [
-        "doubleclick.net", "googlesyndication.com", "googleadservices.com", "google-analytics.com",
-        "googletagservices.com", "adservice.google.com", "adnxs.com", "adsrvr.org", "advertising.com",
-        "amazon-adsystem.com", "criteo.com", "criteo.net", "outbrain.com", "taboola.com", "scorecardresearch.com",
-        "quantserve.com", "moatads.com", "rubiconproject.com", "pubmatic.com", "openx.net", "casalemedia.com",
-        "smartadserver.com", "teads.tv", "yieldmo.com", "sharethrough.com", "media.net", "bidswitch.net",
-        "3lift.com", "adform.net", "adroll.com", "zedo.com", "revcontent.com", "mgid.com", "popads.net",
-        "propellerads.com", "hotjar.com", "mouseflow.com", "fullstory.com", "mixpanel.com", "segment.io",
-        "branch.io", "app-measurement.com", "connect.facebook.net", "ads-twitter.com", "ads.linkedin.com",
-        "analytics.tiktok.com", "ads.yahoo.com", "yads.yahoo.co.jp", "yjtag.yahoo.co.jp", "i-mobile.co.jp",
-        "microad.jp", "fout.jp", "impact-ad.jp", "ad-stir.com", "nend.net", "adingo.jp", "logly.co.jp",
-        "popin.cc", "gmossp-sp.jp", "socdm.com", "ladsp.com", "adtdp.com", "unthem.com",
+        // Google
+        "doubleclick.net", "googlesyndication.com", "googleadservices.com", "google-analytics.com", "googletagservices.com",
+        "googletagmanager.com", "adservice.google.com", "adservice.google.co.jp", "pagead2.googlesyndication.com", "2mdn.net",
+        "app-measurement.com", "imasdk.googleapis.com", "admob.com", "adsensecustomsearchads.com",
+        // Exchanges / SSP / DSP
+        "adnxs.com", "adsrvr.org", "advertising.com", "amazon-adsystem.com", "criteo.com", "criteo.net", "rubiconproject.com",
+        "pubmatic.com", "openx.net", "casalemedia.com", "smartadserver.com", "teads.tv", "yieldmo.com", "sharethrough.com",
+        "media.net", "bidswitch.net", "3lift.com", "adform.net", "adroll.com", "zedo.com", "indexww.com", "lijit.com",
+        "sovrn.com", "gumgum.com", "triplelift.com", "contextweb.com", "spotxchange.com", "spotx.tv", "adcolony.com",
+        "applovin.com", "unityads.unity3d.com", "vungle.com", "inmobi.com", "mopub.com", "smaato.net", "tapjoy.com",
+        "chartboost.com", "ironsrc.com", "supersonicads.com", "adsafeprotected.com", "doubleverify.com", "moatads.com",
+        "serving-sys.com", "sizmek.com", "flashtalking.com", "eyeota.net", "bluekai.com", "krxd.net", "demdex.net",
+        "everesttech.net", "omtrdc.net", "2o7.net", "rlcdn.com", "agkn.com", "exelator.com", "tapad.com", "crwdcntrl.net",
+        "mathtag.com", "turn.com", "dotomi.com", "simpli.fi", "stickyadstv.com", "tremorhub.com", "adkernel.com",
+        "33across.com", "emxdgt.com", "onetag-sys.com", "id5-sync.com", "liadm.com", "pippio.com", "zemanta.com",
+        "undertone.com", "conversantmedia.com", "aniview.com", "connatix.com", "primis.tech", "vidazoo.com", "seedtag.com",
+        // Native / content recommendation
+        "outbrain.com", "taboola.com", "revcontent.com", "mgid.com", "content.ad", "adblade.com", "nativo.com", "ligatus.com",
+        "popin.cc", "logly.co.jp", "gunosy.com", "uzou.jp",
+        // Pop-under / aggressive
+        "popads.net", "popcash.net", "propellerads.com", "propellerclick.com", "adsterra.com", "exoclick.com", "exosrv.com",
+        "juicyads.com", "trafficjunky.net", "hilltopads.net", "clickadu.com", "adcash.com", "onclickads.net", "ad-maven.com",
+        "mondiad.com", "richpush.co", "pushnami.com", "onesignal.com", "pushwoosh.com", "pushengage.com",
+        // Analytics / session replay
+        "scorecardresearch.com", "quantserve.com", "hotjar.com", "mouseflow.com", "fullstory.com", "mixpanel.com", "segment.io",
+        "segment.com", "amplitude.com", "branch.io", "appsflyer.com", "adjust.com", "kochava.com", "chartbeat.com",
+        "chartbeat.net", "newrelic.com", "nr-data.net", "clarity.ms", "crazyegg.com", "luckyorange.com", "inspectlet.com",
+        "optimizely.com", "statcounter.com", "histats.com", "parsely.com", "matomo.cloud", "heapanalytics.com",
+        "bugsnag.com", "sentry-cdn.com", "smartlook.com", "logrocket.com", "treasuredata.com", "karte.io", "ptengine.jp",
+        "userlocal.jp", "i-mobile.co.jp",
+        // Social trackers
+        "connect.facebook.net", "ads-twitter.com", "analytics.twitter.com", "ads.linkedin.com", "px.ads.linkedin.com",
+        "analytics.tiktok.com", "ads.tiktok.com", "ads.pinterest.com", "ct.pinterest.com", "sc-static.net", "tr.snapchat.com",
+        "bat.bing.com", "ads.yahoo.com", "analytics.yahoo.com",
+        // Japan
+        "yads.yahoo.co.jp", "yjtag.yahoo.co.jp", "s.yimg.jp/images/listing", "microad.jp", "microad.net", "fout.jp",
+        "impact-ad.jp", "ad-stir.com", "nend.net", "adingo.jp", "gmossp-sp.jp", "socdm.com", "ladsp.com", "adtdp.com",
+        "unthem.com", "a8.net", "accesstrade.net", "valuecommerce.com", "moshimo.com", "afi-b.com", "rentracks.jp",
+        "felmat.net", "amoad.com", "geniee.jp", "gssprt.jp", "genieesspv.jp", "yieldone.com", "fluct.jp", "adfurikun.jp",
+        "zucks.net", "zucks.co.jp", "ameba.jp/ad", "ad.nicovideo.jp", "adlantis.jp", "advg.jp", "deqwas.net", "sitest.jp",
+        "aid.send.microad.jp", "cosmi.io", "bypass.jp", "adpon.jp", "maist.jp", "ebis.ne.jp", "ad-m.asia", "caprofitx.com",
+        "taxel.jp", "rtoaster.jp", "docodoco.jp", "nakanohito.jp", "shinobi.jp", "ninja.co.jp", "i2i.jp", "ziyu.net",
+        "blogmura.com/ad", "adnico.jp", "performancefirst.jp", "smart-c.jp", "reemo-ad.jp", "addlv.smt.docomo.ne.jp",
+        "medibaad.com", "poweredbyaimstar.com", "aimstar.jp", "webantenna.info", "logmi.jp/ad",
     ]
 
+    /// 広告の枠を消す CSS セレクタ。
     static let hiddenSelectors = [
-        ".adsbygoogle", "ins.adsbygoogle", "[id^='div-gpt-ad']", "[id^='google_ads_iframe']",
-        "[class*='ad-banner']", "[class^='ad_']", ".ad-slot", ".advertisement", "[data-ad-slot]",
-        ".OUTBRAIN", ".trc_related_container", "#taboola-below-article-thumbnails",
+        ".adsbygoogle", "ins.adsbygoogle", "[id^='div-gpt-ad']", "[id^='google_ads_iframe']", "[id^='google_ads_']",
+        "[class*='ad-banner']", "[class^='ad_']", ".ad-slot", ".ad-container", ".ad-wrapper", ".advertisement", ".advert",
+        "[data-ad-slot]", "[data-ad-client]", "[data-ad-unit]", "[data-google-query-id]", "iframe[src*='doubleclick.net']",
+        "iframe[src*='googlesyndication.com']", "iframe[src*='amazon-adsystem.com']", "iframe[id^='aswift_']",
+        ".OUTBRAIN", ".ob-widget", ".trc_related_container", "[id^='taboola-']", ".taboola", ".mgbox", "[id^='yads']",
+        ".yads_ad", "[class*='sponsored-']", "amp-ad", "amp-embed[type='taboola']", "amp-sticky-ad",
+        "[id^='ad-']:not(html):not(body)", "[id$='-ad']:not(html):not(body)", "[class$='-ad']:not(html):not(body)",
+        "[aria-label='広告']", "[aria-label='Advertisement']", "[aria-label='Sponsored']",
     ]
 
-    static func rulesJSON() -> String {
+    /// 「強力」で追加する、じゃまな枠（下に貼りつく広告、通知の許可、アプリへの誘導、おすすめ枠など）。
+    static let strongSelectors = [
+        "[class*='sticky-ad']", "[class*='stickyAd']", "[class*='fixed-ad']", "[class*='overlay-ad']", "[class*='adOverlay']",
+        "[class*='interstitial']", "[id*='interstitial']", "[class*='ad_frame']", "[class*='adsBox']", "[class*='adbox']",
+        "[class*='AdSlot']", "[class*='adslot']", "[class*='ad-unit']", "[class*='adunit']", "[class*='AdUnit']",
+        "[class*='gpt-ad']", "[class*='dfp-ad']", "[class*='banner-ad']", "[class*='bannerAd']", "[class*='native-ad']",
+        "[class*='promoted-']", "[class*='smartbanner']", "[class*='app-banner']", "[class*='appBanner']",
+        "[class*='push-notification']", "[class*='notification-prompt']", "#onesignal-slidedown-container",
+        "#onesignal-bell-container", "[class*='newsletter-popup']", "[class*='newsletter-modal']", "[class*='subscribe-popup']",
+        "[id*='google_vignette']", ".google-auto-placed", "[class*='recommend-ad']", "[class*='pr-banner']",
+        "[class*='affiliate']", "iframe[src*='taboola']", "iframe[src*='outbrain']", "iframe[src*='microad']",
+        "iframe[src*='i-mobile']", "iframe[src*='nend.net']", "iframe[src*='fout.jp']", "iframe[src*='socdm.com']",
+        "iframe[src*='a8.net']", "a[href*='a8.net']", "a[href*='accesstrade.net'] img", "a[href*='valuecommerce.com'] img",
+        "a[href*='doubleclick.net']", "a[href*='googleadservices.com']",
+    ]
+
+    static func rulesJSON(domains: [String], selectors: [String]) -> String {
         var rules: [[String: Any]] = domains.map { domain in
-            let escaped = domain.replacingOccurrences(of: ".", with: "\\.")
+            let escaped = NSRegularExpression.escapedPattern(for: domain).replacingOccurrences(of: "/", with: "\\/")
+            if domain.contains("/") {
+                return ["trigger": ["url-filter": "^https?://\(escaped)"], "action": ["type": "block"]]
+            }
             return [
-                "trigger": ["url-filter": "^[htps]+://([a-z0-9-]+\\.)*\(escaped)[/:?]", "load-type": ["third-party"]],
+                "trigger": ["url-filter": "^https?://([a-z0-9-]+\\.)*\(escaped)[/:?]", "load-type": ["third-party"]],
                 "action": ["type": "block"],
             ]
         }
-        rules.append([
-            "trigger": ["url-filter": ".*"],
-            "action": ["type": "css-display-none", "selector": hiddenSelectors.joined(separator: ", ")],
-        ])
+        if !selectors.isEmpty {
+            rules.append([
+                "trigger": ["url-filter": ".*"],
+                "action": ["type": "css-display-none", "selector": selectors.joined(separator: ", ")],
+            ])
+        }
         let data = (try? JSONSerialization.data(withJSONObject: rules)) ?? Data("[]".utf8)
         return String(decoding: data, as: UTF8.self)
+    }
+
+    /// 「強力」：じゃまな枠を消し、広告・計測でよく使われる URL の形もブロックする。
+    static func strongRulesJSON() -> String {
+        let patterns = [
+            "/pagead/", "/adsbygoogle", "/ads\\.js", "/ad\\.js", "/adframe\\.", "/adserver/", "/adsense/", "/advert/",
+            "/banner_ad", "/prebid", "/gpt\\.js", "/pubads", "/adrequest", "/adview\\?", "/ad_iframe", "/popunder",
+            "/tracking\\.js", "/tracker\\.js", "/pixel\\.gif", "/beacon\\.gif", "/collect\\?v=", "/analytics\\.js",
+        ]
+        var rules: [[String: Any]] = patterns.map { pattern in
+            ["trigger": ["url-filter": pattern, "load-type": ["third-party"],
+                         "resource-type": ["script", "image", "raw", "popup", "document"]],
+             "action": ["type": "block"]]
+        }
+        // 別のサイトから開かれるポップアップ
+        rules.append(["trigger": ["url-filter": ".*", "resource-type": ["popup"], "load-type": ["third-party"]],
+                      "action": ["type": "block"]])
+        rules.append(["trigger": ["url-filter": ".*"],
+                      "action": ["type": "css-display-none", "selector": strongSelectors.joined(separator: ", ")]])
+        let data = (try? JSONSerialization.data(withJSONObject: rules)) ?? Data("[]".utf8)
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    // MARK: Online list (ad server hostnames, refreshed weekly)
+
+    private static let onlineURL = URL(string: "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0&mimetype=plaintext")!
+
+    private static var onlineFile: URL {
+        let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
+            ?? FileManager.default.temporaryDirectory
+        return base.appendingPathComponent("adblock-online.txt")
+    }
+
+    static func onlineFileDate() -> Date? {
+        (try? FileManager.default.attributesOfItem(atPath: onlineFile.path))?[.modificationDate] as? Date
+    }
+
+    static func onlineDomains(forceRefresh: Bool) async -> [String] {
+        let fresh = onlineFileDate().map { Date().timeIntervalSince($0) < 7 * 24 * 3600 } ?? false
+        if forceRefresh || !fresh {
+            var request = URLRequest(url: onlineURL)
+            request.timeoutInterval = 20
+            if let (data, response) = try? await URLSession.shared.data(for: request),
+               (response as? HTTPURLResponse)?.statusCode == 200, data.count > 1000 {
+                try? data.write(to: onlineFile, options: .atomic)
+            }
+        }
+        guard let text = try? String(contentsOf: onlineFile, encoding: .utf8) else { return [] }
+        let known = Set(domains)
+        var result: [String] = []
+        for line in text.split(whereSeparator: \.isNewline) {
+            let host = line.trimmingCharacters(in: .whitespaces).lowercased()
+            guard host.count >= 4, host.count <= 80, host.contains("."), !known.contains(host),
+                  host.range(of: "^[a-z0-9.-]+$", options: .regularExpression) != nil else { continue }
+            result.append(host)
+            if result.count >= 20_000 { break }
+        }
+        return result
     }
 }

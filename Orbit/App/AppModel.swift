@@ -20,6 +20,8 @@ final class AppModel {
     var showSettings = false
     var showSkills = false
     var showModels = false
+    /// Comet 風の「…」メニュー
+    var showPageMenu = false
 
     init() {
         let settings = AppSettings()
@@ -34,7 +36,7 @@ final class AppModel {
         self.assistant = AssistantEngine(settings: settings, tabs: tabs, localAI: localAI)
         tabs.onPageVisited = { [weak history] url, title in history?.record(url: url, title: title) }
         tabs.restoreSession()
-        Task { await tabs.setAdBlock(settings.adBlock) }
+        Task { await tabs.setAdBlock(settings.adBlockLevel) }
     }
 
     /// アプリが前面に来たとき：しばらく見ていないタブをしまい、モデルの状態を確かめる。
@@ -89,7 +91,8 @@ final class AppModel {
     }
 
     private func presentAssistant(then action: @escaping @MainActor () -> Void) {
-        let needsDelay = showSkills
+        let needsDelay = showSkills || showPageMenu
+        showPageMenu = false
         showCommandBar = false
         showSidebar = false
         showSkills = false

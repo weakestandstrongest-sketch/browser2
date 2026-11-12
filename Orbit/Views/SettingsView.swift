@@ -6,6 +6,7 @@ struct SettingsView: View {
     @State private var showKey = false
     @State private var clearedData = false
     @State private var clearedHistory = false
+    @State private var updatingList = false
 
     var body: some View {
         @Bindable var settings = app.settings
@@ -68,15 +69,48 @@ struct SettingsView: View {
                             Text(option.label).tag(option)
                         }
                     }
-                    Toggle("広告・トラッカーをブロック", isOn: $settings.adBlock)
-                        .onChange(of: settings.adBlock) {
-                            Task { await app.tabs.setAdBlock(settings.adBlock) }
+                    Picker("外観", selection: $settings.appearance) {
+                        ForEach(Appearance.allCases) { option in
+                            Text(option.label).tag(option)
                         }
+                    }
                     Picker("見ていないタブを自動でしまう", selection: $settings.autoArchive) {
                         ForEach(AutoArchive.allCases) { option in
                             Text(option.label).tag(option)
                         }
                     }
+                }
+
+                Section {
+                    Picker("広告・トラッカーのブロック", selection: $settings.adBlockLevel) {
+                        ForEach(AdBlockLevel.allCases) { level in
+                            Text(level.label).tag(level)
+                        }
+                    }
+                    .onChange(of: settings.adBlockLevel) {
+                        Task { await app.tabs.setAdBlock(settings.adBlockLevel) }
+                    }
+                    if settings.adBlockLevel == .strong {
+                        Button {
+                            updatingList = true
+                            Task {
+                                await app.tabs.setAdBlock(.strong, refreshOnline: true)
+                                updatingList = false
+                            }
+                        } label: {
+                            HStack {
+                                Label("広告サーバーの一覧を更新", systemImage: "arrow.triangle.2.circlepath")
+                                Spacer()
+                                if updatingList { ProgressView() }
+                            }
+                        }
+                        .disabled(updatingList)
+                        LabeledContent("オンラインの一覧", value: app.tabs.configuration.onlineDomainCount > 0 ? "\(app.tabs.configuration.onlineDomainCount) ドメイン" : "未取得")
+                    }
+                } header: {
+                    Text("広告ブロック")
+                } footer: {
+                    Text("標準：主な広告・計測のドメインと広告の枠。強力：それに加えて、広告サーバーの一覧（週1回自動更新）、ポップアップ、下に貼りつく広告、通知の許可やアプリへの誘導なども消します。動画の中に流れる広告（YouTube など）は消せません。表示が崩れるサイトでは「標準」にしてください。")
                 }
 
                 Section("データ") {

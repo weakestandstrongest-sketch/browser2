@@ -18,6 +18,8 @@ final class BrowserTab: Identifiable {
     var spaceID: UUID
     var isPinned = false
     var lastViewed = Date()
+    /// パソコン用の表示を頼んでいるか
+    var desktopMode = false
     let isPrivate: Bool
 
     @ObservationIgnored let webView: WKWebView
@@ -45,6 +47,7 @@ final class BrowserTab: Identifiable {
         // 左端・右端のスワイプはサイドバーと AI に使う（戻るはカプセルの ‹ とサイドバー）
         webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = true
+        webView.isFindInteractionEnabled = true
         if #available(iOS 16.4, *) { webView.isInspectable = true }
 
         let coordinator = TabCoordinator(tab: self)
@@ -78,6 +81,18 @@ final class BrowserTab: Identifiable {
     }
 
     func reload() { webView.reload() }
+
+    func findInPage() {
+        webView.findInteraction?.presentFindNavigator(showingReplace: false)
+    }
+
+    func toggleDesktopMode() {
+        desktopMode.toggle()
+        webView.customUserAgent = desktopMode
+            ? "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+            : nil
+        webView.reload()
+    }
     func stopLoading() { webView.stopLoading() }
     func goBack() { if webView.canGoBack { webView.goBack() } }
     func goForward() { if webView.canGoForward { webView.goForward() } }

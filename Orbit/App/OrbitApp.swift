@@ -9,7 +9,8 @@ struct OrbitApp: App {
         WindowGroup {
             BrowserView()
                 .environment(model)
-                .tint(model.tabs.currentSpace.theme.accent)
+                .tint(Theme.accent)
+                .preferredColorScheme(model.settings.appearance == .system ? nil : (model.settings.appearance == .dark ? .dark : .light))
                 .onChange(of: scenePhase) {
                     if scenePhase == .active { model.becameActive() }
                 }

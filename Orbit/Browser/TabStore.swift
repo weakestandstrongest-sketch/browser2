@@ -16,7 +16,10 @@ final class TabStore {
     var archived: [ArchivedTab] = []
     /// スクロール中はツールバーを小さくする（Safari / Arc）
     var chromeCollapsed = false
-    var adBlockEnabled = false
+    var adBlockLevel: AdBlockLevel = .off
+    /// 「気を逸らす項目を非表示」で項目を選んでいるタブ
+    var pickingTabID: UUID?
+    let hidden = HiddenItemsStore()
 
     @ObservationIgnored let configuration: BrowserConfiguration
     @ObservationIgnored private var lastSelected: [UUID: UUID] = [:]
@@ -26,6 +29,50 @@ final class TabStore {
     init() {
         configuration = BrowserConfiguration()
         currentSpaceID = BrowserSpace.defaults[0].id
+        configuration.pickerBridge.onPick = { [weak self] webView, selector in
+            guard let self, let tab = self.tabs.first(where: { $0.webView === webView }), tab.id == self.pickingTabID else { return }
+            self.hidden.add(selector, host: tab.url?.host ?? "")
+            self.applyHidden(to: tab)
+        }
+    }
+
+    // MARK: Hide distracting items
+
+    func applyHidden(to tab: BrowserTab) {
+        guard let host = tab.url?.host else { return }
+        let css = hidden.css(for: host)
+        Task { _ = try? await tab.runJS(PageScripts.applyHidden, arguments: ["css": css]) }
+    }
+
+    func startPicking() {
+        guard let tab = current, !tab.isBlank else { return }
+        pickingTabID = tab.id
+        chromeCollapsed = false
+        Task { _ = try? await tab.runJS(PageScripts.pickerStart) }
+    }
+
+    func stopPicking() {
+        guard let id = pickingTabID else { return }
+        pickingTabID = nil
+        if let tab = tabs.first(where: { $0.id == id }) {
+            Task { _ = try? await tab.runJS(PageScripts.pickerStop) }
+        }
+    }
+
+    func undoLastHidden() {
+        guard let tab = current, let host = tab.url?.host else { return }
+        hidden.removeLast(host: host)
+        applyHidden(to: tab)
+    }
+
+    func resetHidden() {
+        guard let tab = current, let host = tab.url?.host else { return }
+        hidden.reset(host: host)
+        applyHidden(to: tab)
+    }
+
+    var hiddenCountForCurrent: Int {
+        hidden.selectors(for: current?.url?.host ?? "").count
     }
 
     // MARK: Lookup
@@ -74,10 +121,15 @@ final class TabStore {
     }
 
     private func configure(_ tab: BrowserTab) {
-        configuration.applyBlocking(adBlockEnabled, to: tab.webView)
-        tab.onNavigationCommitted = { [weak self] in
-            self?.chromeCollapsed = false
-            self?.saveSession()
+        configuration.applyBlocking(adBlockLevel, to: tab.webView)
+        tab.onNavigationCommitted = { [weak self, weak tab] in
+            guard let self else { return }
+            self.chromeCollapsed = false
+            if let tab {
+                if tab.isLoading, self.pickingTabID == tab.id { self.pickingTabID = nil }
+                self.applyHidden(to: tab)
+            }
+            self.saveSession()
         }
         tab.onPageFinished = { [weak self] url, title in self?.onPageVisited?(url, title) }
         tab.onScroll = { [weak self, weak tab] down in
@@ -186,12 +238,19 @@ final class TabStore {
         saveSession()
     }
 
-    func deleteSpace(_ space: BrowserSpace) {
+    /// スペースを削除する。keepTabs が true ならタブは最初のスペースに移し、false なら一緒に閉じる。
+    func deleteSpace(_ space: BrowserSpace, keepTabs: Bool = true) {
         guard spaces.count > 1, let index = spaces.firstIndex(where: { $0.id == space.id }) else { return }
         spaces.remove(at: index)
         let fallback = spaces[0].id
-        for tab in tabs where tab.spaceID == space.id { tab.spaceID = fallback }
-        if currentSpaceID == space.id { switchSpace(to: fallback) }
+        if keepTabs {
+            for tab in tabs where tab.spaceID == space.id { tab.spaceID = fallback }
+        } else {
+            for tab in tabs where tab.spaceID == space.id { tab.webView.stopLoading() }
+            tabs.removeAll { $0.spaceID == space.id }
+        }
+        lastSelected[space.id] = nil
+        if currentSpaceID == space.id || current == nil { switchSpace(to: fallback) }
         saveSession()
     }
 
@@ -229,10 +288,10 @@ final class TabStore {
 
     // MARK: Ad blocking (Opera)
 
-    func setAdBlock(_ enabled: Bool) async {
-        adBlockEnabled = enabled
-        if enabled { _ = await configuration.prepareBlockList() }
-        for tab in tabs { configuration.applyBlocking(enabled, to: tab.webView) }
+    func setAdBlock(_ level: AdBlockLevel, refreshOnline: Bool = false) async {
+        adBlockLevel = level
+        await configuration.prepare(level, refreshOnline: refreshOnline)
+        for tab in tabs { configuration.applyBlocking(level, to: tab.webView) }
     }
 
     // MARK: Persistence (private tabs are never saved)

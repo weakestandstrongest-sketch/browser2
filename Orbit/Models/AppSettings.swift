@@ -56,6 +56,18 @@ enum AIProvider: String, CaseIterable, Identifiable {
     }
 }
 
+enum Appearance: String, CaseIterable, Identifiable {
+    case dark, light, system
+    var id: String { rawValue }
+    var label: String {
+        switch self {
+        case .dark: return "ダーク"
+        case .light: return "ライト"
+        case .system: return "iPhoneの設定に合わせる"
+        }
+    }
+}
+
 enum OmniboxDefault: String, CaseIterable, Identifiable {
     case search, ai
     var id: String { rawValue }
@@ -83,7 +95,8 @@ final class AppSettings {
     /// 既定は端末の中の AI（まいにち と同じ）。クラウドは任意。
     var aiProvider: AIProvider { didSet { defaults.set(aiProvider.rawValue, forKey: "aiProvider") } }
     var autoArchive: AutoArchive { didSet { defaults.set(autoArchive.rawValue, forKey: "autoArchive") } }
-    var adBlock: Bool { didSet { defaults.set(adBlock, forKey: "adBlock") } }
+    var adBlockLevel: AdBlockLevel { didSet { defaults.set(adBlockLevel.rawValue, forKey: "adBlockLevel") } }
+    var appearance: Appearance { didSet { defaults.set(appearance.rawValue, forKey: "appearance") } }
     /// Free-form "about me" memory that is added to the system prompt (Dia-style personalization).
     var aboutMe: String { didSet { defaults.set(aboutMe, forKey: "aboutMe") } }
     /// Optional proxy / gateway base URL. Empty = https://api.anthropic.com
@@ -99,7 +112,8 @@ final class AppSettings {
         omniboxDefault = OmniboxDefault(rawValue: defaults.string(forKey: "omniboxDefault") ?? "") ?? .search
         aiProvider = AIProvider(rawValue: defaults.string(forKey: "aiProvider") ?? "") ?? .local
         autoArchive = AutoArchive(rawValue: defaults.string(forKey: "autoArchive") ?? "") ?? .day
-        adBlock = defaults.object(forKey: "adBlock") as? Bool ?? true
+        adBlockLevel = AdBlockLevel(rawValue: defaults.string(forKey: "adBlockLevel") ?? "") ?? .strong
+        appearance = Appearance(rawValue: defaults.string(forKey: "appearance") ?? "") ?? .dark
         aboutMe = defaults.string(forKey: "aboutMe") ?? ""
         baseURL = defaults.string(forKey: "baseURL") ?? ""
     }

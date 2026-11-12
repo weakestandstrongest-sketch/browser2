@@ -1,26 +1,26 @@
 import SwiftUI
 
-/// 色と書体。Dia の「白い紙＋虹色の光」と Comet の「墨色＋ティール＋明朝の見出し」を合わせる。
+/// 色と書体。Comet のダークとティールを基調にする。
 enum Theme {
-    /// Comet のティール
-    static let accent = Color(red: 0.07, green: 0.58, blue: 0.66)
-    /// Dia の虹（入力欄や AI の縁からにじむ光）
+    /// ティール
+    static let accent = Color(red: 0.33, green: 0.72, blue: 0.78)
+    static let tealDeep = Color(red: 0.13, green: 0.50, blue: 0.56)
+    /// AI が動いているときに縁を回る光
     static let rainbow: [Color] = [
-        Color(red: 1.00, green: 0.56, blue: 0.69), Color(red: 1.00, green: 0.72, blue: 0.44),
-        Color(red: 0.48, green: 0.72, blue: 1.00), Color(red: 0.71, green: 0.61, blue: 1.00),
+        Color(red: 0.33, green: 0.72, blue: 0.78), Color(red: 0.50, green: 0.88, blue: 0.84),
+        Color(red: 0.13, green: 0.50, blue: 0.56), Color(red: 0.30, green: 0.62, blue: 0.86),
     ]
-    static let gradient = LinearGradient(colors: rainbow, startPoint: .leading, endPoint: .trailing)
-    /// 紙と墨
-    static let paper = Color(red: 0.969, green: 0.965, blue: 0.949)
-    static let ink = Color(red: 0.055, green: 0.059, blue: 0.063)
+    static let gradient = LinearGradient(colors: [tealDeep, accent], startPoint: .leading, endPoint: .trailing)
+    static let paper = Color(red: 0.965, green: 0.965, blue: 0.96)
+    static let ink = Color(red: 0.082, green: 0.082, blue: 0.086)
 
-    /// 見出し用の明朝体
+    /// 見出し用の細い書体（Comet のワードマークのような）
     static func display(_ size: CGFloat) -> Font {
-        Font.custom("HiraMinProN-W6", size: size)
+        .system(size: size, weight: .light)
     }
 }
 
-/// AI の印：虹の輪と墨の点。動いている間は輪が回る。
+/// AI の印：ティールの円に、回る輪と点。
 struct OrbView: View {
     var size: CGFloat = 36
     var animating = false
@@ -28,22 +28,25 @@ struct OrbView: View {
 
     var body: some View {
         ZStack {
+            Circle().fill(Theme.accent)
             Circle()
-                .strokeBorder(AngularGradient(colors: Theme.rainbow + [Theme.rainbow[0]], center: .center), lineWidth: max(2.5, size * 0.11))
-                .rotationEffect(.degrees(rotation))
+                .trim(from: 0, to: 0.78)
+                .stroke(Theme.ink.opacity(0.85), style: StrokeStyle(lineWidth: max(1.6, size * 0.065), lineCap: .round))
+                .frame(width: size * 0.5, height: size * 0.5)
+                .rotationEffect(.degrees(rotation - 50))
             Circle()
-                .fill(Color.primary)
-                .frame(width: size * 0.26, height: size * 0.26)
+                .fill(Theme.ink.opacity(0.85))
+                .frame(width: size * 0.14, height: size * 0.14)
         }
         .frame(width: size, height: size)
-        .shadow(color: Theme.rainbow[3].opacity(animating ? 0.7 : 0), radius: 8)
+        .shadow(color: Theme.accent.opacity(animating ? 0.8 : 0), radius: 10)
         .onAppear { updateAnimation() }
         .onChange(of: animating) { updateAnimation() }
     }
 
     private func updateAnimation() {
         if animating {
-            withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { rotation = 360 }
+            withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) { rotation = 360 }
         } else {
             withAnimation(.default) { rotation = 0 }
         }
@@ -53,11 +56,24 @@ struct OrbView: View {
 // MARK: - Halo design language (Dia の光 × Comet のサイドカー)
 
 extension View {
-    /// すりガラスの面。
-    func glass<S: InsettableShape>(_ shape: S) -> some View {
-        self
-            .background(.ultraThinMaterial, in: shape)
-            .overlay(shape.strokeBorder(Color.primary.opacity(0.09), lineWidth: 1))
+    /// ガラスの面。iOS 26 では Liquid Glass、それより前はすりガラス。
+    func glass<S: InsettableShape>(_ shape: S, interactive: Bool = false) -> some View {
+        modifier(GlassSurface(shape: shape, interactive: interactive))
+    }
+}
+
+struct GlassSurface<S: InsettableShape>: ViewModifier {
+    let shape: S
+    var interactive = false
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(interactive ? .regular.interactive() : .regular, in: shape)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .overlay(shape.strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
+        }
     }
 }
 
@@ -70,7 +86,7 @@ struct AuroraBackground: View {
     @State private var drift = false
 
     var body: some View {
-        let k: Double = muted ? 0.15 : (scheme == .dark ? 0.42 : 0.5)
+        let k: Double = muted ? 0.1 : (scheme == .dark ? 0.3 : 0.45)
         GeometryReader { geo in
             let w = geo.size.width
             let h = geo.size.height

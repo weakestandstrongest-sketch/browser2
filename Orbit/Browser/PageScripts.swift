@@ -157,3 +157,82 @@ enum PageScripts {
     return JSON.stringify({ ok: true, scrollY: Math.round(window.scrollY), scrollHeight: Math.round(document.documentElement.scrollHeight) });
     """#
 }
+
+extension PageScripts {
+    /// 「気を逸らす項目を非表示」：タップした項目のセレクタをアプリに送る。
+    static let pickerStart = #"""
+    if (window.__orbitPick) return 'on';
+    const hl = document.createElement('div');
+    hl.style.cssText = 'position:fixed;z-index:2147483647;pointer-events:none;border:2px solid #54b8c7;background:rgba(84,184,199,.22);border-radius:8px;transition:all .12s;display:none';
+    document.documentElement.appendChild(hl);
+    const esc = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : s;
+    const selectorOf = (el) => {
+      const parts = [];
+      let e = el;
+      while (e && e.nodeType === 1 && e !== document.body && e !== document.documentElement && parts.length < 6) {
+        if (e.id && !/\d{4,}/.test(e.id)) { parts.unshift('#' + esc(e.id)); break; }
+        let p = e.tagName.toLowerCase();
+        const cls = Array.from(e.classList).filter(c => !/\d{3,}/.test(c) && c.length < 40).slice(0, 2);
+        if (cls.length) p += '.' + cls.map(esc).join('.');
+        const sib = e.parentElement ? Array.from(e.parentElement.children).filter(x => x.tagName === e.tagName) : [];
+        if (sib.length > 1) p += ':nth-of-type(' + (sib.indexOf(e) + 1) + ')';
+        parts.unshift(p);
+        e = e.parentElement;
+      }
+      return parts.join(' > ');
+    };
+    const pick = (t) => {
+      let e = t;
+      while (e.parentElement && e.parentElement !== document.body) {
+        const r = e.getBoundingClientRect();
+        if (r.width >= 60 && r.height >= 30) break;
+        e = e.parentElement;
+      }
+      return e;
+    };
+    const show = (e) => {
+      const r = e.getBoundingClientRect();
+      hl.style.display = 'block';
+      hl.style.left = r.left + 'px'; hl.style.top = r.top + 'px';
+      hl.style.width = r.width + 'px'; hl.style.height = r.height + 'px';
+    };
+    const onTouch = (ev) => { const t = ev.target; if (t && t.nodeType === 1) show(pick(t)); };
+    const onClick = (ev) => {
+      ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+      const t = ev.target;
+      if (!t || t.nodeType !== 1) return;
+      const e = pick(t);
+      if (e === document.body || e === document.documentElement) return;
+      hl.style.display = 'none';
+      const s = selectorOf(e);
+      if (s) window.webkit.messageHandlers.orbitHide.postMessage(s);
+    };
+    document.addEventListener('touchstart', onTouch, { capture: true, passive: true });
+    document.addEventListener('click', onClick, true);
+    window.__orbitPick = { stop() {
+      document.removeEventListener('touchstart', onTouch, true);
+      document.removeEventListener('click', onClick, true);
+      hl.remove();
+      window.__orbitPick = null;
+    } };
+    return 'on';
+    """#
+
+    static let pickerStop = #"""
+    if (window.__orbitPick) window.__orbitPick.stop();
+    return 'off';
+    """#
+
+    /// 隠す項目の CSS を入れる。Args: css
+    static let applyHidden = #"""
+    let style = document.getElementById('orbit-hidden-items');
+    if (!css) { if (style) style.remove(); return 'ok'; }
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'orbit-hidden-items';
+      document.documentElement.appendChild(style);
+    }
+    style.textContent = css;
+    return 'ok';
+    """#
+}
