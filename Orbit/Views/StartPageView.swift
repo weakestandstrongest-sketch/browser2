@@ -4,6 +4,9 @@ import SwiftUI
 /// 入力は下のバーから。
 struct StartPageView: View {
     @Environment(AppModel.self) private var app
+    @State private var showImport = false
+    @State private var addingFavorite = false
+    @State private var editingFavorite: SpeedDialItem?
 
     private struct Suggestion: Hashable {
         let text: String
@@ -59,21 +62,8 @@ struct StartPageView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if !space.isPrivate {
-                        let sites = app.history.speedDial.map { ($0.title, $0.url) } + app.history.topSites(4).map { ($0.host, $0.url) }
-                        if !sites.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 16) {
-                                    ForEach(Array(sites.prefix(8).enumerated()), id: \.offset) { _, site in
-                                        SiteTile(title: site.0, url: URL(string: site.1)) {
-                                            if let url = URL(string: site.1) { app.tabs.open(url) }
-                                        }
-                                        .frame(width: 60)
-                                    }
-                                }
-                                .padding(.vertical, 6)
-                            }
-                            .padding(.bottom, 10)
-                        }
+                        favorites
+                            .padding(.bottom, 14)
                     }
                     ForEach(suggestions, id: \.self) { item in
                         Button {
@@ -97,10 +87,78 @@ struct StartPageView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .frame(maxHeight: 250)
+            .frame(maxHeight: 330)
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 6)
+        .sheet(isPresented: $showImport) { BookmarkImportView().environment(app) }
+        .sheet(isPresented: $addingFavorite) { FavoriteEditor().environment(app) }
+        .sheet(item: $editingFavorite) { item in FavoriteEditor(editing: item).environment(app) }
+    }
+
+    // MARK: Favorites (Safari のお気に入りの代わり)
+
+    private let favoriteColumns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 4)
+
+    @ViewBuilder
+    private var favorites: some View {
+        let items = app.history.speedDial
+        if items.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("お気に入り").font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    favoriteAction("square.and.arrow.down", "Safariから読み込む") { showImport = true }
+                    favoriteAction("plus", "追加する") { addingFavorite = true }
+                }
+            }
+        } else {
+            LazyVGrid(columns: favoriteColumns, spacing: 14) {
+                ForEach(items.prefix(12)) { item in
+                    SiteTile(title: item.title, url: URL(string: item.url)) {
+                        if let url = URL(string: item.url) { app.tabs.open(url) }
+                    }
+                    .contextMenu {
+                        Button {
+                            editingFavorite = item
+                        } label: { Label("名前を変更", systemImage: "pencil") }
+                        Button(role: .destructive) {
+                            app.history.removeFromSpeedDial(item)
+                        } label: { Label("削除", systemImage: "trash") }
+                    }
+                }
+                if items.count < 12 {
+                    Button {
+                        addingFavorite = true
+                    } label: {
+                        VStack(spacing: 6) {
+                            Image(systemName: "plus")
+                                .font(.title3)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 54, height: 54)
+                                .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.secondary.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [4])))
+                            Text("追加").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button {
+                            showImport = true
+                        } label: { Label("Safariのブックマークを読み込む", systemImage: "square.and.arrow.down") }
+                    }
+                }
+            }
+        }
+    }
+
+    private func favoriteAction(_ icon: String, _ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 14)
+                .frame(height: 40)
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.16), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     private func circleButton(_ symbol: String, _ label: String, action: @escaping () -> Void) -> some View {

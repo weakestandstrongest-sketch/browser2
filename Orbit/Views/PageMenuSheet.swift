@@ -38,7 +38,7 @@ struct PageMenuSheet: View {
                         if let tab { app.tabs.togglePin(tab) }
                         dismiss()
                     }
-                    row("square.grid.2x2", "スピードダイヤルに追加", enabled: hasPage) {
+                    row("square.grid.2x2", "お気に入りに追加", enabled: hasPage) {
                         if let tab, let url = tab.url { app.history.addToSpeedDial(title: tab.displayTitle, url: url) }
                         dismiss()
                     }

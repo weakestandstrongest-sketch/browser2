@@ -105,6 +105,24 @@ final class HistoryStore {
         speedDial.removeAll { $0.id == item.id }
     }
 
+    func renameSpeedDial(_ item: SpeedDialItem, to title: String) {
+        guard let i = speedDial.firstIndex(where: { $0.id == item.id }) else { return }
+        speedDial[i].title = title
+    }
+
+    /// 読み込んだブックマークをお気に入りに足す（同じ URL は足さない）。足した数を返す。
+    @discardableResult
+    func importFavorites(_ items: [SpeedDialItem]) -> Int {
+        var known = Set(speedDial.map(\.url))
+        var added: [SpeedDialItem] = []
+        for item in items where !known.contains(item.url) {
+            known.insert(item.url)
+            added.append(SpeedDialItem(title: item.title, url: item.url))
+        }
+        speedDial.append(contentsOf: added)
+        return added.count
+    }
+
     private func saveSpeedDial() {
         if let data = try? JSONEncoder().encode(speedDial) {
             UserDefaults.standard.set(data, forKey: "speedDial.v1")

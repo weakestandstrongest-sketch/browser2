@@ -7,6 +7,7 @@ struct SettingsView: View {
     @State private var clearedData = false
     @State private var clearedHistory = false
     @State private var updatingList = false
+    @State private var showImport = false
 
     var body: some View {
         @Bindable var settings = app.settings
@@ -113,6 +114,19 @@ struct SettingsView: View {
                     Text("標準：主な広告・計測のドメインと広告の枠。強力：それに加えて、広告サーバーの一覧（週1回自動更新）、ポップアップ、下に貼りつく広告、通知の許可やアプリへの誘導なども消します。動画の中に流れる広告（YouTube など）は消せません。表示が崩れるサイトでは「標準」にしてください。")
                 }
 
+                Section {
+                    Button {
+                        showImport = true
+                    } label: {
+                        Label("Safari のブックマークを読み込む", systemImage: "square.and.arrow.down")
+                    }
+                    LabeledContent("お気に入り", value: "\(app.history.speedDial.count)件")
+                } header: {
+                    Text("お気に入り")
+                } footer: {
+                    Text("新しいタブに並ぶサイトです。長押しで名前の変更・削除ができます。")
+                }
+
                 Section("データ") {
                     Button {
                         app.history.clear()
@@ -136,6 +150,7 @@ struct SettingsView: View {
                     LabeledContent("バージョン", value: Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "-")
                 }
             }
+            .sheet(isPresented: $showImport) { BookmarkImportView().environment(app) }
             .navigationTitle("設定")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

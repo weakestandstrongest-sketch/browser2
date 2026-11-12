@@ -335,7 +335,7 @@ struct SidebarView: View {
             if let url = tab.url {
                 Button {
                     app.history.addToSpeedDial(title: tab.displayTitle, url: url)
-                } label: { Label("スピードダイヤルに追加", systemImage: "square.grid.2x2") }
+                } label: { Label("お気に入りに追加", systemImage: "square.grid.2x2") }
             }
         }
         Button(role: .destructive) {
