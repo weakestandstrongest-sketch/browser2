@@ -34,6 +34,18 @@ final class BrowserTab: Identifiable {
     @ObservationIgnored var onPageFinished: ((URL, String) -> Void)?
     /// Called when the user scrolls the page down (true) or up (false).
     @ObservationIgnored var onScroll: ((Bool) -> Void)?
+    /// セキュリティの知らせ（画面の下に出す）
+    @ObservationIgnored var onSecurityNotice: ((String) -> Void)?
+    /// HTTPS に切り替えて開いているサイト（つながらなければ警告を出す）
+    @ObservationIgnored fileprivate var upgradedHosts: Set<String> = []
+    /// いつ HTTPS に切り替えたか（https から http へ戻されたときに、行ったり来たりしないように）
+    @ObservationIgnored fileprivate var upgradedAt: [String: Date] = [:]
+    /// 利用者が「暗号化なしで開く」を選んだサイト
+    @ObservationIgnored fileprivate var allowedHTTPHosts: Set<String> = []
+    /// 利用者が「それでも開く」を選んだ危険なサイト
+    @ObservationIgnored fileprivate var allowedDangerousHosts: Set<String> = []
+    /// 今のページについて、知らせを出したかどうか（何度も出さない）
+    @ObservationIgnored fileprivate var noticedHost: String?
 
     init(id: UUID = UUID(), url: URL?, configuration: WKWebViewConfiguration, loadNow: Bool = true,
          spaceID: UUID = UUID(), title: String? = nil) {
@@ -216,10 +228,6 @@ final class TabCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
         tab?.reload()
     }
 
-    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
-        tab?.didCommitNavigation()
-    }
-
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         refreshControl.endRefreshing()
         tab?.didFinishNavigation()
@@ -231,15 +239,137 @@ final class TabCoordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         refreshControl.endRefreshing()
+        // HTTPS に切り替えて開こうとしたサイトがつながらなかった → 暗号化されていないことを知らせて、選んでもらう
+        let ns = error as NSError
+        guard let tab, ns.domain == NSURLErrorDomain,
+              let failed = (ns.userInfo[NSURLErrorFailingURLErrorKey] as? URL) ?? webView.url,
+              failed.scheme == "https", let host = failed.host?.lowercased(), tab.upgradedHosts.contains(host) else { return }
+        let secureErrors: Set<Int> = [NSURLErrorSecureConnectionFailed, NSURLErrorServerCertificateHasBadDate, NSURLErrorServerCertificateUntrusted,
+                                      NSURLErrorServerCertificateHasUnknownRoot, NSURLErrorServerCertificateNotYetValid, NSURLErrorCannotConnectToHost,
+                                      NSURLErrorTimedOut, NSURLErrorNetworkConnectionLost, NSURLErrorClientCertificateRejected]
+        guard secureErrors.contains(ns.code) else { return }
+        var plain = URLComponents(url: failed, resolvingAgainstBaseURL: false)
+        plain?.scheme = "http"
+        guard let http = plain?.url else { return }
+        let html = WarningPage.html(
+            title: "このサイトは暗号化されていません",
+            message: "このサイトは安全な接続（HTTPS）に対応していません。送った内容（パスワードやカードの番号など）が、途中で盗み見られるおそれがあります。",
+            detail: host,
+            primary: ("戻る", "orbit-action://back"),
+            secondary: ("暗号化なしで開く（おすすめしません）", WarningPage.action("allow-http", http)))
+        webView.loadHTMLString(html, baseURL: nil)
     }
 
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
-        guard let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else { return .allow }
-        let webSchemes: Set<String> = ["http", "https", "about", "data", "blob", "file", "javascript"]
-        if webSchemes.contains(scheme) { return .allow }
-        // tel:, mailto:, maps, App Store links etc. → hand off to the system.
-        _ = await UIApplication.shared.open(url)
-        return .cancel
+        guard let tab, let url = navigationAction.request.url, let scheme = url.scheme?.lowercased() else { return .allow }
+        let mainFrame = navigationAction.targetFrame?.isMainFrame ?? true
+
+        // 警告の画面のボタン
+        if scheme == "orbit-action" {
+            // 警告の画面（about:blank に描いたもの）からだけ受け付ける。ふつうのページが同じリンクを作っても無視する
+            guard webView.url == nil || webView.url?.absoluteString == "about:blank" else { return .cancel }
+            let target = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "u" }?.value.flatMap { URL(string: $0) }
+            switch url.host {
+            case "allow-http":
+                if let target, let host = target.host?.lowercased() { tab.allowedHTTPHosts.insert(host); tab.load(target) }
+            case "allow-danger":
+                if let target, let host = target.host?.lowercased() { tab.allowedDangerousHosts.insert(host); tab.load(target) }
+            default:
+                if webView.canGoBack { webView.goBack() } else { webView.load(URLRequest(url: URL(string: "about:blank")!)) }
+            }
+            return .cancel
+        }
+
+        let webSchemes: Set<String> = ["http", "https", "about", "data", "blob", "javascript"]
+        guard webSchemes.contains(scheme) else {
+            // tel:, mailto:, 地図, App Store など：指で押したときだけ。広告が勝手にアプリや App Store へ飛ばすのは止める
+            guard navigationAction.navigationType == .linkActivated, mainFrame || navigationAction.targetFrame == nil else {
+                tab.onSecurityNotice?("ページが勝手にほかのアプリを開こうとしたので止めました")
+                return .cancel
+            }
+            if SecurityPrefs.confirmAppSwitch, !["tel", "mailto", "sms", "facetime", "facetime-audio"].contains(scheme) {
+                guard await confirmOpenApp(url) else { return .cancel }
+            }
+            _ = await UIApplication.shared.open(url)
+            return .cancel
+        }
+
+        guard scheme == "http" || scheme == "https", let host = url.host?.lowercased() else { return .allow }
+
+        // 危険なサイト（マルウェア・フィッシング・詐欺）
+        if SecurityPrefs.blockDangerous, !tab.allowedDangerousHosts.contains(host), DangerousSites.isDangerous(host) {
+            if mainFrame {
+                let html = WarningPage.html(
+                    title: "危険なサイトをブロックしました",
+                    message: "このサイトは、ウイルスを配ったり、パスワードやカードの情報をだまし取ったりするサイトとして報告されています。",
+                    detail: host,
+                    primary: ("安全なところへ戻る", "orbit-action://back"),
+                    secondary: ("危険を理解して開く", WarningPage.action("allow-danger", url)))
+                webView.loadHTMLString(html, baseURL: nil)
+            }
+            return .cancel
+        }
+
+        // HTTPS へ切り替える（http のままのページは、通信を盗み見られたり書き換えられたりする）
+        if scheme == "http", mainFrame, SecurityPrefs.httpsUpgrade, !tab.allowedHTTPHosts.contains(host), !Self.isLocal(host) {
+            var secure = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            secure?.scheme = "https"
+            if secure?.port == 80 { secure?.port = nil }
+            // さっき HTTPS にしたのに、サイトが http へ戻してきた → 切り替えをくり返さず、暗号化されていないことを知らせる
+            if navigationAction.navigationType == .other, let at = tab.upgradedAt[host], Date().timeIntervalSince(at) < 15 {
+                tab.upgradedAt[host] = nil
+                let html = WarningPage.html(
+                    title: "このサイトは暗号化されていません",
+                    message: "このサイトは安全な接続（HTTPS）を使わず、暗号化されていない接続に戻してきました。パスワードやカードの番号は入れないでください。",
+                    detail: host,
+                    primary: ("戻る", "orbit-action://back"),
+                    secondary: ("暗号化なしで開く（おすすめしません）", WarningPage.action("allow-http", url)))
+                webView.loadHTMLString(html, baseURL: nil)
+                return .cancel
+            }
+            if let https = secure?.url {
+                tab.upgradedHosts.insert(host)
+                tab.upgradedAt[host] = Date()
+                webView.load(URLRequest(url: https))
+                return .cancel
+            }
+        }
+        return .allow
+    }
+
+    func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+        tab?.didCommitNavigation()
+        guard let tab, let host = webView.url?.host?.lowercased(), tab.noticedHost != host else { return }
+        // 見た目が本物そっくりの別の文字のドメイン（例：аpple.com の а がロシア文字）
+        if DangerousSites.looksLikeHomograph(host) {
+            tab.noticedHost = host
+            tab.onSecurityNotice?("このアドレスには見た目の似た特殊な文字が使われています。本物のサイトか確かめてください")
+        }
+    }
+
+    private static func isLocal(_ host: String) -> Bool {
+        if host == "localhost" || host.hasSuffix(".local") || host.hasSuffix(".localhost") { return true }
+        let parts = host.split(separator: ".").compactMap { Int($0) }
+        guard parts.count == 4 else { return false }
+        return parts[0] == 10 || parts[0] == 127 || (parts[0] == 192 && parts[1] == 168) || (parts[0] == 172 && (16...31).contains(parts[1]))
+    }
+
+    /// ほかのアプリを開く前に確かめる（Safari と同じ）。
+    private func confirmOpenApp(_ url: URL) async -> Bool {
+        guard let presenter = Self.topViewController() else { return true }
+        return await withCheckedContinuation { continuation in
+            let alert = UIAlertController(title: "ほかのアプリで開きますか？", message: url.scheme.map { "\($0): のリンクです" }, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: "キャンセル", style: .cancel) { _ in continuation.resume(returning: false) })
+            alert.addAction(UIAlertAction(title: "開く", style: .default) { _ in continuation.resume(returning: true) })
+            presenter.present(alert, animated: true)
+        }
+    }
+
+    private static func topViewController() -> UIViewController? {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first { $0.activationState == .foregroundActive }
+        var top = scene?.windows.first { $0.isKeyWindow }?.rootViewController
+        while let next = top?.presentedViewController { top = next }
+        return top
     }
 
     /// target="_blank" links open in the same tab.

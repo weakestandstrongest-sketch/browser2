@@ -83,6 +83,18 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    Toggle("危険なサイトをブロック", isOn: $settings.blockDangerous)
+                    Toggle("いつも暗号化（HTTPS）で開く", isOn: $settings.httpsUpgrade)
+                    Toggle("暗号化されていないログインを警告", isOn: $settings.warnInsecureLogin)
+                    Toggle("ほかのアプリを開く前に確認", isOn: $settings.confirmAppSwitch)
+                    LabeledContent("危険なサイトの一覧", value: DangerousSites.onlineCount > 0 ? "\(DangerousSites.onlineCount) ドメイン＋内蔵" : "内蔵の一覧のみ")
+                } header: {
+                    Text("セキュリティ")
+                } footer: {
+                    Text("危険なサイト：ウイルスの配布・フィッシング（偽のログイン画面）・詐欺・勝手に仮想通貨を掘るサイトとして報告されているものを開く前に止めます（一覧は1日1回更新）。HTTPS：http のページも暗号化して開き、対応していないサイトでは開く前に知らせます。ほかに、詐欺サイトの警告（Safari と同じしくみ）、勝手に開く新しい窓、広告が勝手にアプリや App Store へ飛ばすのも止めます。")
+                }
+
+                Section {
                     Picker("広告・トラッカーのブロック", selection: $settings.adBlockLevel) {
                         ForEach(AdBlockLevel.allCases) { level in
                             Text(level.label).tag(level)

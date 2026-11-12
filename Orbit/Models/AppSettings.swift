@@ -96,6 +96,11 @@ final class AppSettings {
     var aiProvider: AIProvider { didSet { defaults.set(aiProvider.rawValue, forKey: "aiProvider") } }
     var autoArchive: AutoArchive { didSet { defaults.set(autoArchive.rawValue, forKey: "autoArchive") } }
     var adBlockLevel: AdBlockLevel { didSet { defaults.set(adBlockLevel.rawValue, forKey: "adBlockLevel") } }
+    /// セキュリティ（WebView からは SecurityPrefs で読む）
+    var httpsUpgrade: Bool { didSet { defaults.set(httpsUpgrade, forKey: SecurityPrefs.httpsKey) } }
+    var blockDangerous: Bool { didSet { defaults.set(blockDangerous, forKey: SecurityPrefs.dangerousKey) } }
+    var warnInsecureLogin: Bool { didSet { defaults.set(warnInsecureLogin, forKey: SecurityPrefs.loginKey) } }
+    var confirmAppSwitch: Bool { didSet { defaults.set(confirmAppSwitch, forKey: SecurityPrefs.appSwitchKey) } }
     var appearance: Appearance { didSet { defaults.set(appearance.rawValue, forKey: "appearance") } }
     /// Free-form "about me" memory that is added to the system prompt (Dia-style personalization).
     var aboutMe: String { didSet { defaults.set(aboutMe, forKey: "aboutMe") } }
@@ -113,6 +118,10 @@ final class AppSettings {
         aiProvider = AIProvider(rawValue: defaults.string(forKey: "aiProvider") ?? "") ?? .local
         autoArchive = AutoArchive(rawValue: defaults.string(forKey: "autoArchive") ?? "") ?? .day
         adBlockLevel = AdBlockLevel(rawValue: defaults.string(forKey: "adBlockLevel") ?? "") ?? .strong
+        httpsUpgrade = SecurityPrefs.httpsUpgrade
+        blockDangerous = SecurityPrefs.blockDangerous
+        warnInsecureLogin = SecurityPrefs.warnInsecureLogin
+        confirmAppSwitch = SecurityPrefs.confirmAppSwitch
         appearance = Appearance(rawValue: defaults.string(forKey: "appearance") ?? "") ?? .dark
         aboutMe = defaults.string(forKey: "aboutMe") ?? ""
         baseURL = defaults.string(forKey: "baseURL") ?? ""

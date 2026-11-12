@@ -25,6 +25,8 @@ final class TabStore {
     @ObservationIgnored private var lastSelected: [UUID: UUID] = [:]
     /// ページを見終わったとき（履歴用）
     @ObservationIgnored var onPageVisited: ((URL, String) -> Void)?
+    /// セキュリティの知らせ（いま見ているタブのものだけ）
+    @ObservationIgnored var onSecurityNotice: ((String) -> Void)?
 
     init() {
         configuration = BrowserConfiguration()
@@ -33,6 +35,11 @@ final class TabStore {
             guard let self, let tab = self.tabs.first(where: { $0.webView === webView }), tab.id == self.pickingTabID else { return }
             self.hidden.add(selector, host: tab.url?.host ?? "")
             self.applyHidden(to: tab)
+        }
+        configuration.securityBridge.onNotice = { [weak self] webView, kind in
+            guard let self, kind == "insecure-login", SecurityPrefs.warnInsecureLogin,
+                  let tab = self.tabs.first(where: { $0.webView === webView }) else { return }
+            tab.onSecurityNotice?("このページは暗号化されていません。パスワードを入れないでください")
         }
     }
 
@@ -132,6 +139,10 @@ final class TabStore {
             self.saveSession()
         }
         tab.onPageFinished = { [weak self] url, title in self?.onPageVisited?(url, title) }
+        tab.onSecurityNotice = { [weak self, weak tab] text in
+            guard let self, let tab, tab.id == self.selectedID else { return }
+            self.onSecurityNotice?(text)
+        }
         tab.onScroll = { [weak self, weak tab] down in
             guard let self, let tab, tab.id == self.current?.id else { return }
             if self.chromeCollapsed != down { self.chromeCollapsed = down }

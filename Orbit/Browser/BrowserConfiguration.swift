@@ -31,6 +31,7 @@ final class BrowserConfiguration {
     let standard: WKWebViewConfiguration
     let privateMode: WKWebViewConfiguration
     let pickerBridge = PickerBridge()
+    let securityBridge = SecurityBridge()
     private var baseList: WKContentRuleList?
     private var strongList: WKContentRuleList?
     private var onlineList: WKContentRuleList?
@@ -43,6 +44,10 @@ final class BrowserConfiguration {
         privateMode = Self.make(store: .nonPersistent())
         for config in [standard, privateMode] {
             config.userContentController.add(pickerBridge, contentWorld: .defaultClient, name: "orbitHide")
+            // 暗号化されていないページのパスワード欄を見つける（ページのスクリプトから見えない別の世界で動かす）
+            config.userContentController.add(securityBridge, contentWorld: .defaultClient, name: "orbitSecurity")
+            config.userContentController.addUserScript(WKUserScript(source: SecurityScript.source, injectionTime: .atDocumentEnd,
+                                                                    forMainFrameOnly: true, in: .defaultClient))
         }
     }
 
@@ -51,10 +56,28 @@ final class BrowserConfiguration {
         config.allowsInlineMediaPlayback = true
         config.websiteDataStore = store
         config.applicationNameForUserAgent = "Version/18.0 Mobile/15E148 Safari/604.1"
+        // 詐欺・フィッシングとして知られているサイトの警告（Safari と同じしくみ）
+        config.preferences.isFraudulentWebsiteWarningEnabled = true
+        // 指で押していないのに勝手に新しい窓を開くスクリプトを止める
+        config.preferences.javaScriptCanOpenWindowsAutomatically = false
         return config
     }
 
     // MARK: Ad blocking
+
+    /// 前に作ったリストがあればそれを使う（毎回作り直すと起動が重い）。中身が変わったら id を変える。
+    private func cached(_ id: String) async -> WKContentRuleList? {
+        await withCheckedContinuation { continuation in
+            WKContentRuleListStore.default().lookUpContentRuleList(forIdentifier: id) { list, _ in
+                continuation.resume(returning: list)
+            }
+        }
+    }
+
+    private func compileOrLoad(_ id: String, _ json: @autoclosure () -> String) async -> WKContentRuleList? {
+        if let list = await cached(id) { return list }
+        return await compile(id, json())
+    }
 
     private func compile(_ id: String, _ json: String) async -> WKContentRuleList? {
         await withCheckedContinuation { continuation in
@@ -68,19 +91,29 @@ final class BrowserConfiguration {
     func prepare(_ level: AdBlockLevel, refreshOnline: Bool = false) async {
         guard level != .off else { return }
         if baseList == nil {
-            baseList = await compile("orbit-adblock-base-v2", ContentBlocker.rulesJSON(domains: ContentBlocker.domains, selectors: ContentBlocker.hiddenSelectors))
+            baseList = await compileOrLoad("orbit-adblock-base-v3", ContentBlocker.rulesJSON(domains: ContentBlocker.domains + ContentBlocker.moreDomains, selectors: ContentBlocker.hiddenSelectors))
         }
         guard level == .strong else { return }
         if strongList == nil {
-            strongList = await compile("orbit-adblock-strong-v2", ContentBlocker.strongRulesJSON())
+            strongList = await compileOrLoad("orbit-adblock-strong-v3", ContentBlocker.strongRulesJSON())
         }
         if onlineList == nil || refreshOnline {
-            let domains = await ContentBlocker.onlineDomains(forceRefresh: refreshOnline)
-            onlineDomainCount = domains.count
-            onlineUpdatedAt = ContentBlocker.onlineFileDate()
-            if !domains.isEmpty {
-                onlineList = await compile("orbit-adblock-online-v1", ContentBlocker.rulesJSON(domains: domains, selectors: []))
+            let stale = ContentBlocker.onlineFileDate().map { Date().timeIntervalSince($0) >= 7 * 24 * 3600 } ?? true
+            if !refreshOnline, !stale, let list = await cached("orbit-adblock-online-v2") {
+                // 1週間以内に作ったものはそのまま使う
+                onlineList = list
+                onlineDomainCount = ContentBlocker.onlineCountSaved
+            } else {
+                let domains = await ContentBlocker.onlineDomains(forceRefresh: refreshOnline)
+                if !domains.isEmpty {
+                    onlineList = await compile("orbit-adblock-online-v2", ContentBlocker.rulesJSON(domains: domains, selectors: []))
+                    if onlineList != nil {
+                        onlineDomainCount = domains.count
+                        ContentBlocker.onlineCountSaved = domains.count
+                    }
+                }
             }
+            onlineUpdatedAt = ContentBlocker.onlineFileDate()
         }
     }
 
@@ -143,6 +176,36 @@ enum ContentBlocker {
         "taxel.jp", "rtoaster.jp", "docodoco.jp", "nakanohito.jp", "shinobi.jp", "ninja.co.jp", "i2i.jp", "ziyu.net",
         "blogmura.com/ad", "adnico.jp", "performancefirst.jp", "smart-c.jp", "reemo-ad.jp", "addlv.smt.docomo.ne.jp",
         "medibaad.com", "poweredbyaimstar.com", "aimstar.jp", "webantenna.info", "logmi.jp/ad",
+    ]
+
+    /// 追加の広告・計測・悪質な広告の配信元。
+    static let moreDomains = [
+        // 広告の配信・計測
+        "adsymptotic.com", "adtelligent.com", "adsco.re", "adthrive.com", "mediavine.com", "ezoic.net", "ezodn.com",
+        "ezojs.com", "carbonads.com", "carbonads.net", "buysellads.com", "servedby-buysellads.com", "infolinks.com",
+        "kargo.com", "lkqd.net", "springserve.com", "teads.com", "unrulymedia.com", "smilewanted.com", "richaudience.com",
+        "adhese.com", "improvedigital.com", "yieldlab.net", "stroeerdigitalgroup.de", "ad.gt", "adition.com",
+        "admixer.net", "adriver.ru", "betweendigital.com", "yandexadexchange.net", "an.yandex.ru", "mc.yandex.ru",
+        "admatic.com.tr", "adpushup.com", "freestar.com", "freestar.io", "pbxai.com", "medianet.com", "contextual.media.net",
+        "quantcount.com", "quantcast.com", "permutive.com", "permutive.app", "cdn.permutive.com", "lotame.com",
+        "bounceexchange.com", "bouncex.net", "wunderkind.co", "zergnet.com", "adsupply.com", "popunder.net",
+        "intellipopup.com", "pubnation.com", "pushcrew.com", "subscribers.com", "sendpulse.com", "webpushr.com",
+        "izooto.com", "truepush.com", "aimtell.com", "foxpush.com", "gravitec.net", "pushpushgo.com",
+        // 計測・行動の記録
+        "doubleclick.com", "googleoptimize.com", "stats.g.doubleclick.net", "analytics.google.com", "fls.doubleclick.net",
+        "pixel.facebook.com", "an.facebook.com", "graph.instagram.com/logging", "analytics.pinterest.com",
+        "snap.licdn.com", "insight.adsrvr.org", "js.adsrvr.org", "tags.tiqcdn.com", "tealiumiq.com", "ensighten.com",
+        "omniture.com", "adobedtm.com", "assets.adobedtm.com", "evergage.com", "cquotient.com", "mxpnl.com",
+        "kissmetrics.com", "woopra.com", "clicky.com", "getclicky.com", "foxmetrics.com", "yandex.ru/metrika",
+        "clarity.microsoft.com", "c.clarity.ms", "browser-intake-datadoghq.com", "rum.hlx.page", "cdn.mxpnl.com",
+        "fullstory.io", "quantummetric.com", "contentsquare.net", "decibelinsight.net", "glassboxdigital.io",
+        "sessioncam.com", "clicktale.net", "uxcam.com", "mouseflow.net", "hotjar.io", "smartlook.cloud",
+        // 日本
+        "ad.impact-ad.jp", "send.microad.jp", "cache.send.microad.jp", "adm.shinobi.jp", "x9.shinobi.jp",
+        "j.zucks.net.zimg.jp", "sh.adingo.jp", "ad.adpon.jp", "ad.ad-stir.com", "js.ad-stir.com", "img.ak.impact-ad.jp",
+        "ad.yieldmanager.com", "adsv.jp", "adlpo.com", "ads-pixiv.net", "ad.mlp.cx", "crossdevice.jp", "glossom.jp",
+        "smac-ssp.com", "pdn.adingo.jp", "imobile.co.jp", "spnativeapi-tls.i-mobile.co.jp", "yimg.jp/images/ads",
+        "ad.auone.jp", "ad.excite.co.jp", "adcloud.jp", "ad.gunosy.com", "flux-cdn.com", "adapf.com",
     ]
 
     /// 広告の枠を消す CSS セレクタ。
@@ -217,7 +280,17 @@ enum ContentBlocker {
 
     // MARK: Online list (ad server hostnames, refreshed weekly)
 
-    private static let onlineURL = URL(string: "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0&mimetype=plaintext")!
+    /// 広告サーバーの一覧。取れたものをすべて合わせる（1つが落ちていても動く）。
+    private static let onlineURLs = [
+        "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0&mimetype=plaintext",
+        "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/domains/light.txt",
+        "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/domains/light.txt",
+    ]
+
+    static var onlineCountSaved: Int {
+        get { UserDefaults.standard.integer(forKey: "adblock.onlineCount") }
+        set { UserDefaults.standard.set(newValue, forKey: "adblock.onlineCount") }
+    }
 
     private static var onlineFile: URL {
         let base = (try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true))
@@ -232,22 +305,35 @@ enum ContentBlocker {
     static func onlineDomains(forceRefresh: Bool) async -> [String] {
         let fresh = onlineFileDate().map { Date().timeIntervalSince($0) < 7 * 24 * 3600 } ?? false
         if forceRefresh || !fresh {
-            var request = URLRequest(url: onlineURL)
-            request.timeoutInterval = 20
-            if let (data, response) = try? await URLSession.shared.data(for: request),
-               (response as? HTTPURLResponse)?.statusCode == 200, data.count > 1000 {
-                try? data.write(to: onlineFile, options: .atomic)
+            var merged: [String] = []
+            var seenMirror = false
+            for source in onlineURLs {
+                // hagezi は GitHub と jsDelivr の同じもの。片方が取れたらもう片方は見ない
+                if seenMirror, source.contains("hagezi") { continue }
+                guard let url = URL(string: source) else { continue }
+                var request = URLRequest(url: url)
+                request.timeoutInterval = 25
+                if let (data, response) = try? await URLSession.shared.data(for: request),
+                   (response as? HTTPURLResponse)?.statusCode == 200, data.count > 1000 {
+                    merged += HostList.parse(String(decoding: data, as: UTF8.self), limit: 120_000)
+                    if source.contains("hagezi") { seenMirror = true }
+                }
+            }
+            if merged.count > 100 {
+                try? merged.joined(separator: "\n").write(to: onlineFile, atomically: true, encoding: .utf8)
             }
         }
         guard let text = try? String(contentsOf: onlineFile, encoding: .utf8) else { return [] }
-        let known = Set(domains)
+        let known = Set(domains + moreDomains)
+        var seen = Set<String>()
         var result: [String] = []
         for line in text.split(whereSeparator: \.isNewline) {
             let host = line.trimmingCharacters(in: .whitespaces).lowercased()
-            guard host.count >= 4, host.count <= 80, host.contains("."), !known.contains(host),
+            guard host.count >= 4, host.count <= 80, host.contains("."), !known.contains(host), seen.insert(host).inserted,
                   host.range(of: "^[a-z0-9.-]+$", options: .regularExpression) != nil else { continue }
             result.append(host)
-            if result.count >= 20_000 { break }
+            // WebKit の1つのリストは 15 万件まで。コンパイルの重さも考えて 5 万件で止める
+            if result.count >= 50_000 { break }
         }
         return result
     }

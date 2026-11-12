@@ -25,6 +25,8 @@ final class AppModel {
     var showPageMenu = false
     /// 画面の下に一瞬出す知らせ
     var toast: String?
+    /// 知らせの絵（SF Symbols）。nil なら星（お気に入り）
+    var toastIcon: String?
     @ObservationIgnored private var toastTask: Task<Void, Never>?
 
     init() {
@@ -41,12 +43,15 @@ final class AppModel {
         tabs.onPageVisited = { [weak history] url, title in history?.record(url: url, title: title) }
         tabs.restoreSession()
         Task { await tabs.setAdBlock(settings.adBlockLevel) }
+        Task { await DangerousSites.load() }
+        tabs.onSecurityNotice = { [weak self] text in self?.showToast(text, icon: "exclamationmark.shield.fill", seconds: 4) }
     }
 
     /// アプリが前面に来たとき：しばらく見ていないタブをしまい、モデルの状態を確かめる。
     func becameActive() {
         tabs.archiveStale(after: settings.autoArchive.interval)
         localAI.refresh()
+        Task { await DangerousSites.load() } // 1日に1回、危険なサイトの一覧を新しくする
     }
 
     // MARK: Omnibox actions
@@ -89,11 +94,12 @@ final class AppModel {
         }
     }
 
-    func showToast(_ text: String) {
+    func showToast(_ text: String, icon: String? = nil, seconds: Double = 1.8) {
         toast = text
+        toastIcon = icon
         toastTask?.cancel()
         toastTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
             self.toast = nil
         }

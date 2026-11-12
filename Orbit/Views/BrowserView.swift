@@ -46,11 +46,13 @@ struct BrowserView: View {
         .animation(spring, value: app.assistantExpanded)
         .overlay(alignment: .bottom) {
             if let toast = app.toast {
-                Label(toast, systemImage: toast.contains("外し") ? "star.slash" : "star.fill")
+                Label(toast, systemImage: app.toastIcon ?? (toast.contains("外し") ? "star.slash" : "star.fill"))
                     .font(.subheadline.weight(.medium))
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
+                    .multilineTextAlignment(.leading)
                     .glass(Capsule())
+                    .padding(.horizontal, 20)
                     .padding(.bottom, 150)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .allowsHitTesting(false)
