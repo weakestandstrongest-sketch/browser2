@@ -12,6 +12,11 @@ struct PageMenuSheet: View {
         ScrollView {
             VStack(spacing: 10) {
                 card {
+                    let fav = app.history.isFavorite(tab?.url)
+                    row(fav ? "star.slash" : "star", fav ? "お気に入りから外す" : "お気に入りに追加", enabled: hasPage) {
+                        dismiss()
+                        app.toggleFavoriteForCurrentPage()
+                    }
                     row("text.alignleft", "要約する", enabled: hasPage) {
                         if let skill = app.skills.skills.first { app.run(skill) }
                     }
@@ -36,10 +41,6 @@ struct PageMenuSheet: View {
                     }
                     row((tab?.isPinned ?? false) ? "pin.slash" : "pin", (tab?.isPinned ?? false) ? "ピン留めを外す" : "ピン留め", enabled: hasPage) {
                         if let tab { app.tabs.togglePin(tab) }
-                        dismiss()
-                    }
-                    row("square.grid.2x2", "お気に入りに追加", enabled: hasPage) {
-                        if let tab, let url = tab.url { app.history.addToSpeedDial(title: tab.displayTitle, url: url) }
                         dismiss()
                     }
                     row("doc.on.doc", "URLをコピー", enabled: hasPage) {

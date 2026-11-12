@@ -141,3 +141,48 @@ struct FavoriteEditor: View {
         .presentationDetents([.medium])
     }
 }
+
+
+/// お気に入りの並べ替えと削除（Safari のお気に入りの編集と同じ）。
+struct FavoritesListView: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    @State private var adding = false
+    @State private var importing = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(app.history.speedDial) { item in
+                        HStack(spacing: 12) {
+                            SiteIcon(url: URL(string: item.url), size: 30)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(item.title).lineLimit(1)
+                                Text(URLParser.displayHost(URL(string: item.url))).font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .onDelete { offsets in
+                        for i in offsets { app.history.removeFromSpeedDial(app.history.speedDial[i]) }
+                    }
+                    .onMove { app.history.moveFavorites(from: $0, to: $1) }
+                } footer: {
+                    Text("上から順に、新しいタブに並びます。")
+                }
+                Section {
+                    Button { adding = true } label: { Label("URLを入力して追加", systemImage: "plus") }
+                    Button { importing = true } label: { Label("ブックマークのファイルを読み込む", systemImage: "square.and.arrow.down") }
+                }
+            }
+            .environment(\.editMode, .constant(.active))
+            .navigationTitle("お気に入り")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) { Button("完了") { dismiss() } }
+            }
+            .sheet(isPresented: $adding) { FavoriteEditor().environment(app) }
+            .sheet(isPresented: $importing) { BookmarkImportView().environment(app) }
+        }
+    }
+}

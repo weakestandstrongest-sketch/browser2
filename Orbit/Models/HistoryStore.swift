@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Observation
 
 struct HistoryEntry: Codable, Hashable, Identifiable {
@@ -94,6 +95,26 @@ final class HistoryStore {
     func clear() {
         entries = []
         scheduleSave()
+    }
+
+    func isFavorite(_ url: URL?) -> Bool {
+        guard let url else { return false }
+        return speedDial.contains { $0.url == url.absoluteString }
+    }
+
+    /// お気に入りに入っていれば外し、なければ足す。足したら true。
+    @discardableResult
+    func toggleFavorite(title: String, url: URL) -> Bool {
+        if isFavorite(url) {
+            speedDial.removeAll { $0.url == url.absoluteString }
+            return false
+        }
+        addToSpeedDial(title: title, url: url)
+        return true
+    }
+
+    func moveFavorites(from source: IndexSet, to destination: Int) {
+        speedDial.move(fromOffsets: source, toOffset: destination)
     }
 
     func addToSpeedDial(title: String, url: URL) {

@@ -7,6 +7,7 @@ struct StartPageView: View {
     @State private var showImport = false
     @State private var addingFavorite = false
     @State private var editingFavorite: SpeedDialItem?
+    @State private var editingList = false
 
     private struct Suggestion: Hashable {
         let text: String
@@ -65,6 +66,7 @@ struct StartPageView: View {
                         favorites
                             .padding(.bottom, 14)
                     }
+                    Text("AIに聞いてみる").font(.caption.weight(.medium)).foregroundStyle(.secondary).padding(.bottom, 2)
                     ForEach(suggestions, id: \.self) { item in
                         Button {
                             app.ask(item.text, mode: item.mode)
@@ -87,13 +89,14 @@ struct StartPageView: View {
                 }
             }
             .scrollIndicators(.hidden)
-            .frame(maxHeight: 330)
+            .frame(maxHeight: 400)
         }
         .padding(.horizontal, 14)
         .padding(.bottom, 6)
         .sheet(isPresented: $showImport) { BookmarkImportView().environment(app) }
         .sheet(isPresented: $addingFavorite) { FavoriteEditor().environment(app) }
         .sheet(item: $editingFavorite) { item in FavoriteEditor(editing: item).environment(app) }
+        .sheet(isPresented: $editingList) { FavoritesListView().environment(app) }
     }
 
     // MARK: Favorites (Safari のお気に入りの代わり)
@@ -106,14 +109,19 @@ struct StartPageView: View {
         if items.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 Text("お気に入り").font(.caption.weight(.medium)).foregroundStyle(.secondary)
-                HStack(spacing: 10) {
-                    favoriteAction("square.and.arrow.down", "Safariから読み込む") { showImport = true }
-                    favoriteAction("plus", "追加する") { addingFavorite = true }
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "star")
+                        .foregroundStyle(Theme.accent)
+                    Text("ページを開いて、アドレス欄の ☆ か「…」→「お気に入りに追加」を押すと、ここに並びます。")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                favoriteAction("plus", "URLを入力して追加") { addingFavorite = true }
             }
         } else {
             LazyVGrid(columns: favoriteColumns, spacing: 14) {
-                ForEach(items.prefix(12)) { item in
+                ForEach(items) { item in
                     SiteTile(title: item.title, url: URL(string: item.url)) {
                         if let url = URL(string: item.url) { app.tabs.open(url) }
                     }
@@ -121,12 +129,15 @@ struct StartPageView: View {
                         Button {
                             editingFavorite = item
                         } label: { Label("名前を変更", systemImage: "pencil") }
+                        Button {
+                            editingList = true
+                        } label: { Label("並べ替え", systemImage: "arrow.up.arrow.down") }
                         Button(role: .destructive) {
                             app.history.removeFromSpeedDial(item)
                         } label: { Label("削除", systemImage: "trash") }
                     }
                 }
-                if items.count < 12 {
+                if true {
                     Button {
                         addingFavorite = true
                     } label: {
@@ -142,8 +153,11 @@ struct StartPageView: View {
                     .buttonStyle(.plain)
                     .contextMenu {
                         Button {
+                            editingList = true
+                        } label: { Label("並べ替え・削除", systemImage: "arrow.up.arrow.down") }
+                        Button {
                             showImport = true
-                        } label: { Label("Safariのブックマークを読み込む", systemImage: "square.and.arrow.down") }
+                        } label: { Label("ブックマークのファイルを読み込む", systemImage: "square.and.arrow.down") }
                     }
                 }
             }

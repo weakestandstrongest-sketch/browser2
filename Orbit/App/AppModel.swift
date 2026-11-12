@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import Observation
 
 @MainActor
@@ -22,6 +23,9 @@ final class AppModel {
     var showModels = false
     /// Comet 風の「…」メニュー
     var showPageMenu = false
+    /// 画面の下に一瞬出す知らせ
+    var toast: String?
+    @ObservationIgnored private var toastTask: Task<Void, Never>?
 
     init() {
         let settings = AppSettings()
@@ -83,6 +87,24 @@ final class AppModel {
         presentAssistant {
             self.assistant.send(prompt, attaching: attach, displayText: display, mode: skill.usesAgent ? .agent : .chat)
         }
+    }
+
+    func showToast(_ text: String) {
+        toast = text
+        toastTask?.cancel()
+        toastTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            guard !Task.isCancelled else { return }
+            self.toast = nil
+        }
+    }
+
+    /// 表示中のページをお気に入りに登録する／外す（Safari の「お気に入りに追加」）。
+    func toggleFavoriteForCurrentPage() {
+        guard let tab = tabs.current, let url = tab.url else { return }
+        let added = history.toggleFavorite(title: tab.displayTitle, url: url)
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        showToast(added ? "お気に入りに追加しました" : "お気に入りから外しました")
     }
 
     func currentPageAttachment() -> [BrowserTab] {

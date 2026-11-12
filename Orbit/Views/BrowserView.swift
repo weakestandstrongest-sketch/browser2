@@ -44,6 +44,19 @@ struct BrowserView: View {
         .animation(spring, value: app.showSidebar)
         .animation(spring, value: app.showAssistant)
         .animation(spring, value: app.assistantExpanded)
+        .overlay(alignment: .bottom) {
+            if let toast = app.toast {
+                Label(toast, systemImage: toast.contains("外し") ? "star.slash" : "star.fill")
+                    .font(.subheadline.weight(.medium))
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .glass(Capsule())
+                    .padding(.bottom, 150)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.snappy, value: app.toast)
         .animation(.easeOut(duration: 0.2), value: app.showCommandBar)
         .animation(.snappy(duration: 0.25), value: app.tabs.chromeCollapsed)
         .sheet(isPresented: $app.showSettings) {
@@ -281,6 +294,20 @@ struct CommandCapsule: View {
                 .foregroundStyle((tab?.isBlank ?? true) ? Color.secondary : Color.primary.opacity(0.85))
                 .lineLimit(1)
             Spacer(minLength: 0)
+            if let tab, !tab.isBlank {
+                let fav = app.history.isFavorite(tab.url)
+                Button {
+                    app.toggleFavoriteForCurrentPage()
+                } label: {
+                    Image(systemName: fav ? "star.fill" : "star")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(fav ? Theme.accent : Color.secondary)
+                        .frame(width: 34, height: 50)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(fav ? "お気に入りから外す" : "お気に入りに追加")
+            }
             Button {
                 if let tab { tab.isLoading ? tab.stopLoading() : tab.reload() }
             } label: {

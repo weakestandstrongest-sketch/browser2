@@ -115,16 +115,20 @@ struct SettingsView: View {
                 }
 
                 Section {
+                    NavigationLink {
+                        FavoritesListView()
+                    } label: {
+                        LabeledContent("お気に入りを編集", value: "\(app.history.speedDial.count)件")
+                    }
                     Button {
                         showImport = true
                     } label: {
-                        Label("Safari のブックマークを読み込む", systemImage: "square.and.arrow.down")
+                        Label("ブックマークのファイルを読み込む", systemImage: "square.and.arrow.down")
                     }
-                    LabeledContent("お気に入り", value: "\(app.history.speedDial.count)件")
                 } header: {
                     Text("お気に入り")
                 } footer: {
-                    Text("新しいタブに並ぶサイトです。長押しで名前の変更・削除ができます。")
+                    Text("ページを開いてアドレス欄の ☆ を押すと登録され、新しいタブに並びます。")
                 }
 
                 Section("データ") {
