@@ -111,7 +111,9 @@ struct BrowserView: View {
                 Color.black.opacity(0.001)
                     .onTapGesture { app.showSidebar = false }
                     .gesture(
-                        DragGesture(minimumDistance: 6)
+                        // 指の動きは画面全体の座標で測る。動いているカードの座標で測ると、
+                        // カードが指についてくるたびに移動量が変わり、位置が行ったり来たりしてガクガクした
+                        DragGesture(minimumDistance: 6, coordinateSpace: .global)
                             .onChanged { drag = min(0, $0.translation.width) }
                             .onEnded { value in
                                 let close = value.translation.width < -sidebarWidth * 0.25 || value.predictedEndTranslation.width < -sidebarWidth * 0.5
@@ -184,7 +186,7 @@ struct BrowserView: View {
                 .frame(width: 20)
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 6)
+                    DragGesture(minimumDistance: 6, coordinateSpace: .global)
                         .onChanged { drag = max(0, $0.translation.width) }
                         .onEnded { value in
                             let open = value.translation.width > sidebarWidth * 0.28 || value.predictedEndTranslation.width > sidebarWidth * 0.6
@@ -199,7 +201,7 @@ struct BrowserView: View {
                 .frame(width: 20)
                 .contentShape(Rectangle())
                 .gesture(
-                    DragGesture(minimumDistance: 10)
+                    DragGesture(minimumDistance: 10, coordinateSpace: .global)
                         .onEnded { value in
                             if value.translation.width < -50 { app.showAssistant = true }
                         }
@@ -339,7 +341,7 @@ struct CommandCapsule: View {
         .onTapGesture { app.showCommandBar = true }
         .offset(x: dragOffset)
         .simultaneousGesture(
-            DragGesture(minimumDistance: 20)
+            DragGesture(minimumDistance: 20, coordinateSpace: .global) // 動くカプセルではなく画面の座標で測る（ガクガクしないように）
                 .onChanged { value in
                     if abs(value.translation.width) > abs(value.translation.height) {
                         dragOffset = value.translation.width / 3
