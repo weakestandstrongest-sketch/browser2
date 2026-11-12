@@ -4,7 +4,7 @@ import llama
 
 /// llama.cpp を iPhone の中で動かす（ひび手帳の HibiLLMPlugin と同じ作り）。
 /// すべての llama.cpp の呼び出しは専用のキューで順番に行う。
-final class LlamaEngine: @unchecked Sendable {
+final class OrbitLlamaEngine: @unchecked Sendable {
     struct Options {
         var maxTokens: Int
         var temperature: Float

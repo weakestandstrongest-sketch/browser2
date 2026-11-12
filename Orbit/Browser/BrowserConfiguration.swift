@@ -288,8 +288,8 @@ enum ContentBlocker {
     ]
 
     static var onlineCountSaved: Int {
-        get { UserDefaults.standard.integer(forKey: "adblock.onlineCount") }
-        set { UserDefaults.standard.set(newValue, forKey: "adblock.onlineCount") }
+        get { OrbitEmbed.defaults.integer(forKey: "adblock.onlineCount") }
+        set { OrbitEmbed.defaults.set(newValue, forKey: "adblock.onlineCount") }
     }
 
     private static var onlineFile: URL {

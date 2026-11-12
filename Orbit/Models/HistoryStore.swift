@@ -27,7 +27,7 @@ final class HistoryStore {
     @ObservationIgnored private var saveTask: Task<Void, Never>?
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: "speedDial.v1"),
+        if let data = OrbitEmbed.defaults.data(forKey: "speedDial.v1"),
            let items = try? JSONDecoder().decode([SpeedDialItem].self, from: data) {
             speedDial = items
         } else {
@@ -146,7 +146,7 @@ final class HistoryStore {
 
     private func saveSpeedDial() {
         if let data = try? JSONEncoder().encode(speedDial) {
-            UserDefaults.standard.set(data, forKey: "speedDial.v1")
+            OrbitEmbed.defaults.set(data, forKey: "speedDial.v1")
         }
     }
 

@@ -10,7 +10,7 @@ final class HiddenItemsStore {
     private(set) var items: [String: [String]] = [:]
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.key),
+        if let data = OrbitEmbed.defaults.data(forKey: Self.key),
            let saved = try? JSONDecoder().decode([String: [String]].self, from: data) {
             items = saved
         }
@@ -44,7 +44,7 @@ final class HiddenItemsStore {
 
     private func save() {
         if let data = try? JSONEncoder().encode(items) {
-            UserDefaults.standard.set(data, forKey: Self.key)
+            OrbitEmbed.defaults.set(data, forKey: Self.key)
         }
     }
 }

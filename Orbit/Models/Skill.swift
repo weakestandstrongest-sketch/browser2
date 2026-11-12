@@ -31,7 +31,7 @@ final class SkillStore {
     var skills: [Skill] { didSet { save() } }
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.key),
+        if let data = OrbitEmbed.defaults.data(forKey: Self.key),
            let decoded = try? JSONDecoder().decode([Skill].self, from: data) {
             skills = decoded
         } else {
@@ -47,7 +47,7 @@ final class SkillStore {
 
     private func save() {
         if let data = try? JSONEncoder().encode(skills) {
-            UserDefaults.standard.set(data, forKey: Self.key)
+            OrbitEmbed.defaults.set(data, forKey: Self.key)
         }
     }
 

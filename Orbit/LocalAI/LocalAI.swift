@@ -36,9 +36,9 @@ final class LocalAI {
         case ready(String)
     }
 
-    var selectedModelID: String { didSet { UserDefaults.standard.set(selectedModelID, forKey: "localModel") } }
+    var selectedModelID: String { didSet { OrbitEmbed.defaults.set(selectedModelID, forKey: "localModel") } }
     /// 0 = 自動（メモリが 8GB 前後以上なら 8192、それ以外は 4096）
-    var contextSetting: Int { didSet { UserDefaults.standard.set(contextSetting, forKey: "localContext") } }
+    var contextSetting: Int { didSet { OrbitEmbed.defaults.set(contextSetting, forKey: "localContext") } }
     var downloaded: Set<String> = []
     var downloads: [String: DownloadProgress] = [:]
     var downloadErrors: [String: String] = [:]
@@ -46,17 +46,17 @@ final class LocalAI {
     var phase: Phase = .idle
     var freeBytes: Int64 = 0
 
-    @ObservationIgnored private let engine = LlamaEngine()
+    @ObservationIgnored private let engine = OrbitLlamaEngine()
     @ObservationIgnored private var downloaders: [String: ModelDownloader] = [:]
-    @ObservationIgnored private var loaded: LlamaEngine.Loaded?
+    @ObservationIgnored private var loaded: OrbitLlamaEngine.Loaded?
     @ObservationIgnored private var loadedModelID: String?
     @ObservationIgnored private var memoryObserver: NSObjectProtocol?
 
     let physicalMemory = Int64(ProcessInfo.processInfo.physicalMemory)
 
     init() {
-        selectedModelID = UserDefaults.standard.string(forKey: "localModel") ?? ""
-        contextSetting = UserDefaults.standard.integer(forKey: "localContext")
+        selectedModelID = OrbitEmbed.defaults.string(forKey: "localModel") ?? ""
+        contextSetting = OrbitEmbed.defaults.integer(forKey: "localContext")
         refresh()
         if selectedModelID.isEmpty {
             selectedModelID = appleState == "available" ? "apple-intelligence" : (LocalModel.catalog.first { downloaded.contains($0.id) }?.id ?? "")
@@ -292,7 +292,7 @@ final class LocalAI {
 
         guard let loaded else { throw LocalAIError.failed("モデルが読み込まれていません") }
         let prompt = ChatTemplate.render(model.template, messages: messages, bos: loaded.bos)
-        let options = LlamaEngine.Options(
+        let options = OrbitLlamaEngine.Options(
             maxTokens: maxTokens,
             temperature: temperature,
             topP: 0.95,
@@ -308,7 +308,7 @@ final class LocalAI {
                     if result.finish == "error" { failure.error = LocalAIError.failed("AIが途中で止まりました") }
                 } catch {
                     let ns = error as NSError
-                    failure.error = ns.domain == LlamaEngine.tooLongDomain ? LocalAIError.tooLong : error
+                    failure.error = ns.domain == OrbitLlamaEngine.tooLongDomain ? LocalAIError.tooLong : error
                 }
                 continuation.finish()
             }

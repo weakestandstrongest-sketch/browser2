@@ -199,6 +199,8 @@ struct BrowserView: View {
                         }
                 )
             Spacer()
+            // ひび手帳の中では、右端からのスワイプはひび手帳へ戻る動き（ひび手帳の側で受け取る）
+            if !OrbitEmbed.embedded {
             Color.clear
                 .frame(width: 20)
                 .contentShape(Rectangle())
@@ -208,6 +210,7 @@ struct BrowserView: View {
                             if value.translation.width < -50 { app.showAssistant = true }
                         }
                 )
+            }
         }
         .padding(.bottom, 140)
     }

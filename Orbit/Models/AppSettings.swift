@@ -82,7 +82,7 @@ enum OmniboxDefault: String, CaseIterable, Identifiable {
 @MainActor
 @Observable
 final class AppSettings {
-    private let defaults = UserDefaults.standard
+    private let defaults = OrbitEmbed.defaults
 
     var apiKey: String {
         didSet { Keychain.set(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: "anthropic-api-key") }
@@ -108,7 +108,7 @@ final class AppSettings {
     var baseURL: String { didSet { defaults.set(baseURL, forKey: "baseURL") } }
 
     init() {
-        let defaults = UserDefaults.standard
+        let defaults = OrbitEmbed.defaults
         apiKey = Keychain.get("anthropic-api-key") ?? ""
         model = defaults.string(forKey: "model") ?? ClaudeModelOption.all[0].id
         effort = EffortLevel(rawValue: defaults.string(forKey: "effort") ?? "") ?? .medium

@@ -10,7 +10,7 @@ enum SecurityPrefs {
     static let appSwitchKey = "sec.confirmAppSwitch"
 
     private static func flag(_ key: String) -> Bool {
-        UserDefaults.standard.object(forKey: key) as? Bool ?? true
+        OrbitEmbed.defaults.object(forKey: key) as? Bool ?? true
     }
     static var httpsUpgrade: Bool { flag(httpsKey) }
     static var blockDangerous: Bool { flag(dangerousKey) }

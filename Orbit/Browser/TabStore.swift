@@ -331,23 +331,23 @@ final class TabStore {
         let selected = current?.isPrivate == true ? nil : selectedID
         let session = Session(spaces: spaces, currentSpaceID: space, tabs: saved, selectedID: selected)
         if let data = try? JSONEncoder().encode(session) {
-            UserDefaults.standard.set(data, forKey: Self.sessionKey)
+            OrbitEmbed.defaults.set(data, forKey: Self.sessionKey)
         }
     }
 
     private func saveArchive() {
         if let data = try? JSONEncoder().encode(archived) {
-            UserDefaults.standard.set(data, forKey: Self.archiveKey)
+            OrbitEmbed.defaults.set(data, forKey: Self.archiveKey)
         }
     }
 
     func restoreSession() {
         guard tabs.isEmpty else { return }
-        if let data = UserDefaults.standard.data(forKey: Self.archiveKey),
+        if let data = OrbitEmbed.defaults.data(forKey: Self.archiveKey),
            let list = try? JSONDecoder().decode([ArchivedTab].self, from: data) {
             archived = list
         }
-        guard let data = UserDefaults.standard.data(forKey: Self.sessionKey),
+        guard let data = OrbitEmbed.defaults.data(forKey: Self.sessionKey),
               let session = try? JSONDecoder().decode(Session.self, from: data),
               !session.spaces.isEmpty else {
             spaces = BrowserSpace.defaults
