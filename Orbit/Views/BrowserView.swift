@@ -106,7 +106,7 @@ struct BrowserView: View {
     }
 
     private func pageCard(_ tab: BrowserTab?) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: 22, style: .continuous)
         let blank = tab?.isBlank ?? true
         return ZStack {
             if let tab, !tab.isBlank {
@@ -128,7 +128,7 @@ struct BrowserView: View {
                 }
             }
         }
-        .shadow(color: .black.opacity(blank ? 0 : 0.18), radius: 18, y: 8)
+        .shadow(color: .black.opacity(blank ? 0 : 0.1), radius: 20, y: 10)
     }
 
     /// AI を全画面にしているあいだの、ページの小さな帯。
@@ -202,7 +202,7 @@ struct CommandCapsule: View {
                 app.tabs.chromeCollapsed = false
             } label: {
                 HStack(spacing: 7) {
-                    Circle().fill(space.theme.gradient).frame(width: 8, height: 8)
+                    OrbView(size: 12)
                     Text(addressText(tab))
                         .font(.caption.weight(.semibold))
                         .lineLimit(1)
@@ -217,16 +217,37 @@ struct CommandCapsule: View {
                 if let tab, !tab.isBlank {
                     suggestions
                 }
-                HStack(spacing: 8) {
+                HStack(spacing: 0) {
                     sidebarButton(space)
+                    Rectangle().fill(Color.primary.opacity(0.1)).frame(width: 1, height: 22)
                     address(tab: tab, space: space)
                     Button {
                         app.showAssistant = true
                     } label: {
-                        OrbView(size: 48, animating: app.assistant.isRunning)
+                        OrbView(size: 36, animating: app.assistant.isRunning)
+                            .frame(width: 50, height: 54)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                     .contextMenu { quickActions(tab) }
                     .accessibilityLabel("AIアシスタント")
+                }
+                .frame(height: 54)
+                .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
+                .overlay {
+                    if app.assistant.isRunning {
+                        GlowBorder(shape: Capsule(), lineWidth: 2)
+                    }
+                }
+                .background {
+                    // Dia のように、入力欄の下から虹色の光がにじむ
+                    Capsule()
+                        .fill(Theme.gradient)
+                        .padding(.horizontal, 26)
+                        .blur(radius: 16)
+                        .opacity(0.5)
+                        .offset(y: 8)
                 }
             }
         }
@@ -241,10 +262,11 @@ struct CommandCapsule: View {
                         app.run(skill)
                     } label: {
                         Label(skill.name, systemImage: skill.icon)
-                            .font(.caption.weight(.semibold))
+                            .font(.caption.weight(.medium))
                             .padding(.horizontal, 11)
                             .padding(.vertical, 7)
-                            .glass(Capsule())
+                            .background(Color(.secondarySystemGroupedBackground).opacity(0.9), in: Capsule())
+                            .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                 }
@@ -257,20 +279,15 @@ struct CommandCapsule: View {
         Button {
             app.showSidebar = true
         } label: {
-            Image(systemName: space.isPrivate ? "eyeglasses" : "sidebar.left")
-                .font(.body.weight(.semibold))
-                .foregroundStyle(space.theme.accent)
-                .frame(width: 48, height: 48)
-                .glass(Circle())
-                .overlay(alignment: .topTrailing) {
-                    Text("\(app.tabs.currentSpaceTabs.count)")
-                        .font(.system(size: 10, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(space.theme.gradient, in: Capsule())
-                        .offset(x: 3, y: -3)
-                }
+            HStack(spacing: 5) {
+                Image(systemName: space.isPrivate ? "eyeglasses" : "sidebar.left")
+                    .font(.subheadline.weight(.medium))
+                Text("\(app.tabs.currentSpaceTabs.count)")
+                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 58, height: 54)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("サイドバー")
@@ -300,10 +317,8 @@ struct CommandCapsule: View {
             Spacer(minLength: 0)
             pageMenu(tab)
         }
-        .padding(.leading, 14)
-        .padding(.trailing, 6)
-        .frame(height: 48)
-        .glass(Capsule())
+        .padding(.leading, 12)
+        .frame(height: 54)
         .overlay(alignment: .bottomLeading) {
             if let tab, tab.isLoading {
                 GeometryReader { geo in
@@ -312,16 +327,11 @@ struct CommandCapsule: View {
                         .frame(width: max(8, geo.size.width * tab.progress), height: 2.5)
                         .frame(maxHeight: .infinity, alignment: .bottom)
                 }
-                .padding(.horizontal, 20)
+                .padding(.horizontal, 8)
                 .allowsHitTesting(false)
             }
         }
-        .overlay {
-            if app.assistant.isRunning {
-                GlowBorder(shape: Capsule(), lineWidth: 2)
-            }
-        }
-        .contentShape(Capsule())
+        .contentShape(Rectangle())
         .onTapGesture { app.showCommandBar = true }
         .offset(x: dragOffset)
         .simultaneousGesture(

@@ -19,12 +19,12 @@ enum SpaceTheme: String, Codable, CaseIterable, Identifiable {
 
     var colors: [Color] {
         switch self {
-        case .violet: return [Color(red: 0.36, green: 0.42, blue: 1.0), Color(red: 0.66, green: 0.33, blue: 0.95)]
-        case .ocean: return [Color(red: 0.10, green: 0.55, blue: 0.95), Color(red: 0.20, green: 0.80, blue: 0.85)]
-        case .mint: return [Color(red: 0.15, green: 0.70, blue: 0.50), Color(red: 0.55, green: 0.85, blue: 0.45)]
-        case .sunset: return [Color(red: 1.0, green: 0.55, blue: 0.25), Color(red: 0.95, green: 0.30, blue: 0.45)]
-        case .rose: return [Color(red: 0.95, green: 0.35, blue: 0.60), Color(red: 0.75, green: 0.35, blue: 0.90)]
-        case .graphite: return [Color(red: 0.25, green: 0.27, blue: 0.32), Color(red: 0.45, green: 0.47, blue: 0.52)]
+        case .violet: return [Color(red: 0.40, green: 0.43, blue: 0.92), Color(red: 0.66, green: 0.55, blue: 0.98)]
+        case .ocean: return [Color(red: 0.07, green: 0.58, blue: 0.66), Color(red: 0.39, green: 0.82, blue: 0.78)]
+        case .mint: return [Color(red: 0.24, green: 0.60, blue: 0.42), Color(red: 0.62, green: 0.80, blue: 0.52)]
+        case .sunset: return [Color(red: 0.93, green: 0.52, blue: 0.28), Color(red: 0.91, green: 0.37, blue: 0.46)]
+        case .rose: return [Color(red: 0.86, green: 0.38, blue: 0.56), Color(red: 0.72, green: 0.48, blue: 0.90)]
+        case .graphite: return [Color(red: 0.30, green: 0.32, blue: 0.35), Color(red: 0.50, green: 0.52, blue: 0.55)]
         }
     }
 
@@ -45,8 +45,8 @@ struct BrowserSpace: Identifiable, Codable, Hashable {
     var isPrivate: Bool { id == Self.privateID }
 
     static let defaults: [BrowserSpace] = [
-        BrowserSpace(name: "パーソナル", icon: "house", theme: .violet),
-        BrowserSpace(name: "仕事", icon: "briefcase", theme: .ocean),
+        BrowserSpace(name: "パーソナル", icon: "house", theme: .ocean),
+        BrowserSpace(name: "仕事", icon: "briefcase", theme: .violet),
     ]
 
     static let icons = ["house", "briefcase", "book", "graduationcap", "cart", "airplane", "gamecontroller",

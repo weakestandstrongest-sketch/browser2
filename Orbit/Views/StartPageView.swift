@@ -23,15 +23,16 @@ struct StartPageView: View {
                         Image(systemName: space.icon)
                         Text(space.name)
                     }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(space.theme.accent)
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(.secondary)
                     Text(space.isPrivate ? "プライベート" : greeting)
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .font(Theme.display(38))
+                        .padding(.top, 2)
                     Text(space.isPrivate ? "このタブの履歴と Cookie は、閉じると消えます。" : Date().formatted(date: .complete, time: .omitted))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.top, 36)
+                .padding(.top, 56)
 
                 askCard(space)
 
@@ -56,7 +57,7 @@ struct StartPageView: View {
                 HStack(spacing: 12) {
                     OrbView(size: 40, animating: app.assistant.isRunning)
                     Text("何でも聞く、探す、任せる")
-                        .font(.body.weight(.medium))
+                        .font(.body)
                         .foregroundStyle(.secondary)
                     Spacer(minLength: 0)
                 }
@@ -81,8 +82,11 @@ struct StartPageView: View {
             }
         }
         .padding(16)
-        .glass(shape)
-        .overlay(shape.strokeBorder(space.theme.gradient.opacity(0.5), lineWidth: 1))
+        .background(Color(.secondarySystemGroupedBackground), in: shape)
+        .overlay(shape.strokeBorder(Theme.gradient, lineWidth: 1.2))
+        .background {
+            shape.fill(Theme.gradient).padding(.horizontal, 24).blur(radius: 22).opacity(0.4).offset(y: 12)
+        }
     }
 
     private func example(_ icon: String, _ text: String, _ mode: SendMode) -> some View {
@@ -93,13 +97,13 @@ struct StartPageView: View {
                 .font(.footnote.weight(.medium))
                 .padding(.horizontal, 12)
                 .padding(.vertical, 9)
-                .background(Color.primary.opacity(0.06), in: Capsule())
+                .overlay(Capsule().strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 
     private func label(_ text: String) -> some View {
-        Text(text).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+        Text(text).font(.caption.weight(.medium)).foregroundStyle(.secondary).textCase(nil)
     }
 
     @ViewBuilder
@@ -125,9 +129,8 @@ struct StartPageView: View {
                 }
             }
         }
-        .padding(16)
+        .padding(.top, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glass(RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     @ViewBuilder

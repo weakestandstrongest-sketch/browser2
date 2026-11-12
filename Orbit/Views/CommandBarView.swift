@@ -89,8 +89,7 @@ struct CommandBarView: View {
                 .scrollIndicators(.hidden)
 
                 HStack(spacing: 10) {
-                    Image(systemName: "sparkle.magnifyingglass")
-                        .foregroundStyle(space.theme.accent)
+                    OrbView(size: 22)
                     TextField("検索、URL、AIへの質問、/スキル", text: $text)
                         .focused($focused)
                         .textInputAutocapitalization(.never)
@@ -111,9 +110,11 @@ struct CommandBarView: View {
                 }
                 .padding(.horizontal, 16)
                 .frame(height: 54)
-                .glass(Capsule())
-                .overlay(Capsule().strokeBorder(space.theme.gradient, lineWidth: 1.5))
-                .shadow(color: space.theme.accent.opacity(0.25), radius: 16, y: 4)
+                .background(Color(.secondarySystemGroupedBackground), in: Capsule())
+                .overlay(Capsule().strokeBorder(Theme.gradient, lineWidth: 1.2))
+                .background {
+                    Capsule().fill(Theme.gradient).padding(.horizontal, 26).blur(radius: 16).opacity(0.55).offset(y: 8)
+                }
                 .padding(.horizontal, 10)
                 .padding(.bottom, 8)
             }
@@ -193,9 +194,9 @@ struct CommandBarView: View {
             HStack(spacing: 12) {
                 Image(systemName: icon)
                     .font(.footnote.weight(.semibold))
-                    .foregroundStyle(app.tabs.currentSpace.theme.accent)
+                    .foregroundStyle(.primary)
                     .frame(width: 32, height: 32)
-                    .background(app.tabs.currentSpace.theme.accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
                     Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)

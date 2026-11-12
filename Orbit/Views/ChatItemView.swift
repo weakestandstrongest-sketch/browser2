@@ -21,8 +21,8 @@ struct ChatItemView: View {
                     Text(item.text)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(Theme.accent, in: RoundedRectangle(cornerRadius: 18))
-                        .foregroundStyle(.white)
+                        .background(Color.primary, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .foregroundStyle(Color(.systemBackground))
                         .textSelection(.enabled)
                 }
             }

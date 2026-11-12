@@ -118,14 +118,13 @@ struct SidebarView: View {
 
     private func header(_ space: BrowserSpace, count: Int) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: space.icon)
-                .font(.headline)
-                .foregroundStyle(.white)
-                .frame(width: 42, height: 42)
-                .background(space.theme.gradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Circle().fill(space.theme.gradient).frame(width: 8, height: 8)
+                    Image(systemName: space.icon).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
+                }
                 Text(space.name)
-                    .font(.system(.title2, design: .rounded, weight: .bold))
+                    .font(Theme.display(30))
                     .lineLimit(1)
                 Text(space.isPrivate ? "履歴を残しません" : "\(count)個のタブ")
                     .font(.caption)
@@ -223,8 +222,8 @@ struct SidebarView: View {
         .frame(height: 46)
         .background {
             if selected {
-                shape.fill(.thinMaterial)
-                shape.strokeBorder(space.theme.accent.opacity(0.35), lineWidth: 1)
+                shape.fill(Color(.secondarySystemGroupedBackground))
+                shape.strokeBorder(Color.primary.opacity(0.1), lineWidth: 1)
             }
         }
         .contentShape(Rectangle())
@@ -244,13 +243,13 @@ struct SidebarView: View {
                         } label: {
                             Image(systemName: space.icon)
                                 .font(.footnote.weight(.semibold))
-                                .foregroundStyle(selected ? Color.white : Color.primary)
+                                .foregroundStyle(selected ? Color(.systemBackground) : Color.primary)
                                 .frame(width: 38, height: 38)
                                 .background {
                                     if selected {
-                                        Circle().fill(space.theme.gradient)
+                                        Circle().fill(Color.primary)
                                     } else {
-                                        Circle().fill(.ultraThinMaterial)
+                                        Circle().strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
                                     }
                                 }
                         }

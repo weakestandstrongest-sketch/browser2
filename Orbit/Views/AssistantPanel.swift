@@ -49,7 +49,8 @@ struct AssistantPanel: View {
             }
             composer
         }
-        .glass(shape)
+        .background(Color(.secondarySystemGroupedBackground).opacity(0.94), in: shape)
+        .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
         .overlay {
             if engine.isRunning {
                 GlowBorder(shape: shape, lineWidth: 2)
@@ -79,7 +80,7 @@ struct AssistantPanel: View {
                 .accessibilityLabel("新しいチャット")
                 Spacer(minLength: 0)
                 VStack(spacing: 0) {
-                    Text("Orbit AI").font(.subheadline.weight(.semibold))
+                    Text("Orbit").font(Theme.display(16))
                     Text(engine.usesCloud ? "\(engine.modelLabel)（クラウド）" : "\(engine.modelLabel) ・ この iPhone の中")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -213,8 +214,8 @@ struct AssistantPanel: View {
                                     .font(.footnote.weight(.medium))
                                     .padding(.horizontal, 10)
                                     .padding(.vertical, 6)
-                                    .background(Theme.accent.opacity(0.12), in: Capsule())
-                                    .foregroundStyle(Theme.accent)
+                                    .overlay(Capsule().strokeBorder(Color.primary.opacity(0.14), lineWidth: 1))
+                                    .foregroundStyle(.primary)
                             }
                             .buttonStyle(.plain)
                         }
@@ -299,7 +300,7 @@ struct AssistantPanel: View {
                     Button(action: send) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 34))
-                            .foregroundStyle(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.secondary : Theme.accent)
+                            .foregroundStyle(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Color.secondary.opacity(0.5) : Color.primary)
                     }
                     .disabled(input.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     .accessibilityLabel("送信")
