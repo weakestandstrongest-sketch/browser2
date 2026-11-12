@@ -13,7 +13,10 @@ final class AppModel {
 
     var showAssistant = false
     var showCommandBar = false
-    var showTabs = false
+    /// 左端からのスワイプで出るサイドバー
+    var showSidebar = false
+    /// AI を全画面に広げているか（false ならページと上下に並ぶ）
+    var assistantExpanded = false
     var showSettings = false
     var showSkills = false
     var showModels = false
@@ -86,21 +89,14 @@ final class AppModel {
     }
 
     private func presentAssistant(then action: @escaping @MainActor () -> Void) {
-        let needsDelay = showCommandBar || showTabs || showSkills
+        let needsDelay = showSkills
         showCommandBar = false
-        showTabs = false
+        showSidebar = false
         showSkills = false
         Task { @MainActor in
             if needsDelay { try? await Task.sleep(nanoseconds: 450_000_000) }
             self.showAssistant = true
             action()
-        }
-    }
-
-    func openTabSwitcher() {
-        Task { @MainActor in
-            await tabs.current?.captureThumbnail()
-            showTabs = true
         }
     }
 }

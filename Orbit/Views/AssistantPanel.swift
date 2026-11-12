@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// The AI side panel: chat with your tabs (Dia) + an agent that acts on the page (Comet).
+/// AI パネル。ページのカードの下に並び（Comet のサイドカーを縦にした形）、タブと会話し（Dia）、ページを操作する。
 struct AssistantPanel: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
     @State private var input = ""
     @State private var includeCurrent = true
     @State private var extraTabIDs: Set<UUID> = []
@@ -13,7 +12,9 @@ struct AssistantPanel: View {
     private var currentTab: BrowserTab? { app.tabs.current }
 
     var body: some View {
-        NavigationStack {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        VStack(spacing: 0) {
+            header
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 14) {
@@ -38,47 +39,87 @@ struct AssistantPanel: View {
                         }
                         Color.clear.frame(height: 1).id("bottom")
                     }
-                    .padding()
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onChange(of: engine.revision) {
                     proxy.scrollTo("bottom", anchor: .bottom)
                 }
             }
-            .safeAreaInset(edge: .bottom) { composer }
-            .environment(\.openURL, OpenURLAction { url in
-                app.tabs.newTab(url: url)
-                return .handled
-            })
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button {
-                        engine.reset()
-                    } label: {
-                        Image(systemName: "square.and.pencil")
-                    }
-                    .disabled(engine.isRunning || engine.items.isEmpty)
-                    .accessibilityLabel("新しいチャット")
-                }
-                ToolbarItem(placement: .principal) {
-                    VStack(spacing: 0) {
-                        Text("Orbit AI").font(.headline)
-                        Text(engine.usesCloud ? "\(engine.modelLabel)（クラウド）" : "\(engine.modelLabel) ・ この iPhone の中")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                    }
-                    .accessibilityLabel("閉じる")
-                }
+            composer
+        }
+        .glass(shape)
+        .overlay {
+            if engine.isRunning {
+                GlowBorder(shape: shape, lineWidth: 2)
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            app.tabs.newTab(url: url)
+            app.assistantExpanded = false
+            return .handled
+        })
+    }
+
+    /// つまみを上に引くと全画面、下に引くと閉じる。
+    private var header: some View {
+        VStack(spacing: 4) {
+            Capsule()
+                .fill(Color.secondary.opacity(0.35))
+                .frame(width: 36, height: 4)
+                .padding(.top, 8)
+            HStack(spacing: 4) {
+                Button {
+                    engine.reset()
+                } label: {
+                    Image(systemName: "square.and.pencil").frame(width: 36, height: 36)
+                }
+                .disabled(engine.isRunning || engine.items.isEmpty)
+                .accessibilityLabel("新しいチャット")
+                Spacer(minLength: 0)
+                VStack(spacing: 0) {
+                    Text("Orbit AI").font(.subheadline.weight(.semibold))
+                    Text(engine.usesCloud ? "\(engine.modelLabel)（クラウド）" : "\(engine.modelLabel) ・ この iPhone の中")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Button {
+                    app.assistantExpanded.toggle()
+                } label: {
+                    Image(systemName: app.assistantExpanded ? "rectangle.split.1x2" : "arrow.up.left.and.arrow.down.right")
+                        .frame(width: 36, height: 36)
+                }
+                .accessibilityLabel(app.assistantExpanded ? "ページと並べる" : "全画面")
+                Button {
+                    inputFocused = false
+                    app.showAssistant = false
+                } label: {
+                    Image(systemName: "xmark").frame(width: 36, height: 36)
+                }
+                .accessibilityLabel("閉じる")
+            }
+            .font(.subheadline.weight(.semibold))
+            .padding(.horizontal, 8)
+        }
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 12)
+                .onEnded { value in
+                    if value.translation.height < -40 {
+                        app.assistantExpanded = true
+                    } else if value.translation.height > 40 {
+                        if app.assistantExpanded {
+                            app.assistantExpanded = false
+                        } else {
+                            inputFocused = false
+                            app.showAssistant = false
+                        }
+                    }
+                }
+        )
     }
 
     // MARK: Empty state
@@ -98,7 +139,6 @@ struct AssistantPanel: View {
             }
             if engine.usesCloud && !app.settings.hasAPIKey {
                 Button {
-                    dismiss()
                     app.showSettings = true
                 } label: {
                     Label("クラウドAIを使うには、設定でAPIキーを入力してください", systemImage: "key.fill")
@@ -110,8 +150,7 @@ struct AssistantPanel: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                     Button {
-                        dismiss()
-                        app.showModels = true
+                            app.showModels = true
                     } label: {
                         Label("AIモデルを選ぶ・ダウンロード", systemImage: "arrow.down.circle.fill")
                             .font(.footnote.weight(.semibold))
@@ -269,7 +308,6 @@ struct AssistantPanel: View {
             .padding(.horizontal)
         }
         .padding(.vertical, 8)
-        .background(.bar)
     }
 
     private func send() {

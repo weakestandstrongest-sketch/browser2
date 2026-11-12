@@ -1,50 +1,56 @@
 import SwiftUI
 import UIKit
 
+/// 画面全体。光の背景の上にページのカードが浮かび、
+/// 左端から右へスワイプでサイドバー、右端から左へスワイプで AI が出る。
 struct BrowserView: View {
     @Environment(AppModel.self) private var app
+    @State private var drag: CGFloat = 0
+
+    private let spring = Animation.spring(response: 0.38, dampingFraction: 0.86)
 
     var body: some View {
         @Bindable var app = app
-        VStack(spacing: 0) {
-            ZStack {
-                if let tab = app.tabs.current {
-                    WebViewContainer(webView: tab.webView)
-                        .id(tab.id)
-                    if tab.isBlank {
-                        StartPageView()
-                            .transition(.opacity)
+        ZStack {
+            GeometryReader { geo in
+                let width = min(geo.size.width * 0.84, 340)
+                let progress = min(1, max(0, (app.showSidebar ? 1 : 0) + drag / width))
+                ZStack(alignment: .leading) {
+                    AuroraBackground(theme: app.tabs.currentSpace.theme, active: app.assistant.isRunning, muted: app.tabs.isPrivate)
+
+                    SidebarView()
+                        .frame(width: width)
+                        .offset(x: (progress - 1) * width * 0.35)
+                        .opacity(Double(progress))
+                        .allowsHitTesting(app.showSidebar)
+
+                    stage(height: geo.size.height, sidebarWidth: width)
+                        .scaleEffect(1 - 0.08 * progress, anchor: .leading)
+                        .offset(x: progress * width)
+
+                    if !app.showSidebar && !app.showCommandBar {
+                        edgeStrips(sidebarWidth: width)
                     }
-                } else {
-                    StartPageView()
                 }
             }
-            BottomBar()
+            .ignoresSafeArea(app.showAssistant ? [] : .keyboard, edges: .bottom)
+
+            if app.showCommandBar {
+                CommandBarView()
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
         }
+        .animation(spring, value: app.showSidebar)
+        .animation(spring, value: app.showAssistant)
+        .animation(spring, value: app.assistantExpanded)
+        .animation(.easeOut(duration: 0.2), value: app.showCommandBar)
         .animation(.snappy(duration: 0.25), value: app.tabs.chromeCollapsed)
-        .sheet(isPresented: $app.showAssistant) {
-            AssistantPanel()
-                .environment(app)
-                .presentationDetents([.medium, .large])
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-                .presentationContentInteraction(.scrolls)
-                .presentationDragIndicator(.visible)
-        }
-        .fullScreenCover(isPresented: $app.showCommandBar) {
-            CommandBarView()
-                .environment(app)
-        }
-        .sheet(isPresented: $app.showTabs) {
-            TabSwitcherView()
-                .environment(app)
-        }
         .sheet(isPresented: $app.showSettings) {
-            SettingsView()
-                .environment(app)
+            SettingsView().environment(app)
         }
         .sheet(isPresented: $app.showSkills) {
-            SkillsView()
-                .environment(app)
+            SkillsView().environment(app)
         }
         .sheet(isPresented: $app.showModels) {
             NavigationStack {
@@ -58,123 +64,266 @@ struct BrowserView: View {
             .environment(app)
         }
     }
+
+    // MARK: Stage (page card + capsule / assistant)
+
+    private func stage(height: CGFloat, sidebarWidth: CGFloat) -> some View {
+        let tab = app.tabs.current
+        return VStack(spacing: 8) {
+            if app.showAssistant && app.assistantExpanded {
+                pageStrip(tab)
+            } else {
+                pageCard(tab)
+                    .frame(height: app.showAssistant ? max(140, height * 0.36) : nil)
+            }
+            if app.showAssistant {
+                AssistantPanel()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                CommandCapsule()
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.bottom, 6)
+        .overlay {
+            if app.showSidebar {
+                Color.black.opacity(0.001)
+                    .onTapGesture { app.showSidebar = false }
+                    .gesture(
+                        DragGesture(minimumDistance: 6)
+                            .onChanged { drag = min(0, $0.translation.width) }
+                            .onEnded { value in
+                                let close = value.translation.width < -sidebarWidth * 0.25 || value.predictedEndTranslation.width < -sidebarWidth * 0.5
+                                withAnimation(spring) {
+                                    drag = 0
+                                    if close { app.showSidebar = false }
+                                }
+                            }
+                    )
+            }
+        }
+    }
+
+    private func pageCard(_ tab: BrowserTab?) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        let blank = tab?.isBlank ?? true
+        return ZStack {
+            if let tab, !tab.isBlank {
+                WebViewContainer(webView: tab.webView)
+                    .id(tab.id)
+            } else {
+                StartPageView()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(blank ? Color.clear : Color(.systemBackground))
+        .clipShape(shape)
+        .overlay {
+            if !blank {
+                if app.assistant.isRunning {
+                    GlowBorder(shape: shape)
+                } else {
+                    shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                }
+            }
+        }
+        .shadow(color: .black.opacity(blank ? 0 : 0.18), radius: 18, y: 8)
+    }
+
+    /// AI を全画面にしているあいだの、ページの小さな帯。
+    private func pageStrip(_ tab: BrowserTab?) -> some View {
+        Button {
+            app.assistantExpanded = false
+        } label: {
+            HStack(spacing: 10) {
+                if let tab, !tab.isBlank {
+                    SiteIcon(url: tab.url, size: 22)
+                } else {
+                    Image(systemName: "sparkles")
+                }
+                Text(tab?.displayTitle ?? "新しいタブ")
+                    .font(.subheadline.weight(.medium))
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+                Image(systemName: "rectangle.split.1x2")
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .glass(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Edge swipes
+
+    private func edgeStrips(sidebarWidth: CGFloat) -> some View {
+        HStack {
+            Color.clear
+                .frame(width: 20)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 6)
+                        .onChanged { drag = max(0, $0.translation.width) }
+                        .onEnded { value in
+                            let open = value.translation.width > sidebarWidth * 0.28 || value.predictedEndTranslation.width > sidebarWidth * 0.6
+                            withAnimation(spring) {
+                                drag = 0
+                                if open { app.showSidebar = true }
+                            }
+                        }
+                )
+            Spacer()
+            Color.clear
+                .frame(width: 20)
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 10)
+                        .onEnded { value in
+                            if value.translation.width < -50 { app.showAssistant = true }
+                        }
+                )
+        }
+        .padding(.bottom, 110)
+    }
 }
 
-/// Arc Search / Safari のように下にまとめたツールバー。スペースの色がつき、スクロール中は小さくなる。
-struct BottomBar: View {
+/// 下に浮かぶガラスのカプセル。サイドバー・アドレス・AI の3つだけ。
+struct CommandCapsule: View {
     @Environment(AppModel.self) private var app
     @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         let tab = app.tabs.current
         let space = app.tabs.currentSpace
-        Group {
-            if app.tabs.chromeCollapsed {
-                Button {
-                    app.tabs.chromeCollapsed = false
-                } label: {
-                    HStack(spacing: 6) {
-                        if tab?.isPrivate == true { Image(systemName: "eyeglasses") }
-                        Text(addressText(tab))
-                    }
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
+        if app.tabs.chromeCollapsed {
+            Button {
+                app.tabs.chromeCollapsed = false
+            } label: {
+                HStack(spacing: 7) {
+                    Circle().fill(space.theme.gradient).frame(width: 8, height: 8)
+                    Text(addressText(tab))
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
                 }
-                .buttonStyle(.plain)
-                .background(.bar)
-            } else {
-                fullBar(tab: tab, space: space)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+                .glass(Capsule())
             }
-        }
-    }
-
-    private func fullBar(tab: BrowserTab?, space: BrowserSpace) -> some View {
-        VStack(spacing: 8) {
-            if let tab, tab.isLoading {
-                ProgressView(value: tab.progress)
-                    .progressViewStyle(.linear)
-                    .tint(space.theme.accent)
-                    .frame(height: 2)
-                    .padding(.horizontal, -16)
-            }
-
-            addressCapsule(tab: tab, space: space)
-
-            HStack {
-                toolbarButton("chevron.backward", enabled: tab?.canGoBack ?? false) { tab?.goBack() }
-                Spacer()
-                toolbarButton("chevron.forward", enabled: tab?.canGoForward ?? false) { tab?.goForward() }
-                Spacer()
-                Button {
-                    app.showAssistant = true
-                } label: {
-                    OrbView(size: 40, animating: app.assistant.isRunning)
-                }
-                .contextMenu { quickActions(tab) }
-                .accessibilityLabel("AIアシスタント")
-                Spacer()
-                Button {
-                    app.openTabSwitcher()
-                } label: {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 5)
-                            .strokeBorder(.primary, lineWidth: 1.6)
-                            .frame(width: 22, height: 22)
-                        Text("\(app.tabs.currentSpaceTabs.count)").font(.caption2.weight(.bold))
-                    }
-                    .frame(width: 44, height: 36)
-                }
-                .foregroundStyle(.primary)
-                Spacer()
-                moreMenu(tab)
-            }
-            .padding(.horizontal, 4)
-        }
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
-        .background {
-            ZStack {
-                Rectangle().fill(.bar)
-                Rectangle().fill(space.theme.gradient).opacity(tab?.isPrivate == true ? 0.35 : 0.12)
-            }
-            .ignoresSafeArea(edges: .bottom)
-        }
-    }
-
-    /// 左右にスワイプすると隣のタブへ（Arc Search）
-    private func addressCapsule(tab: BrowserTab?, space: BrowserSpace) -> some View {
-        Button {
-            app.showCommandBar = true
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: space.icon)
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(space.theme.accent)
-                Text(addressText(tab))
-                    .font(.subheadline)
-                    .foregroundStyle((tab?.isBlank ?? true) ? Color.secondary : Color.primary)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+            .buttonStyle(.plain)
+        } else {
+            VStack(spacing: 8) {
                 if let tab, !tab.isBlank {
+                    suggestions
+                }
+                HStack(spacing: 8) {
+                    sidebarButton(space)
+                    address(tab: tab, space: space)
                     Button {
-                        tab.isLoading ? tab.stopLoading() : tab.reload()
+                        app.showAssistant = true
                     } label: {
-                        Image(systemName: tab.isLoading ? "xmark" : "arrow.clockwise")
-                            .font(.footnote.weight(.semibold))
-                            .foregroundStyle(.secondary)
+                        OrbView(size: 48, animating: app.assistant.isRunning)
+                    }
+                    .contextMenu { quickActions(tab) }
+                    .accessibilityLabel("AIアシスタント")
+                }
+            }
+        }
+    }
+
+    /// ページに合わせた提案（Comet）。タップですぐ実行。
+    private var suggestions: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(app.skills.skills.prefix(4)) { skill in
+                    Button {
+                        app.run(skill)
+                    } label: {
+                        Label(skill.name, systemImage: skill.icon)
+                            .font(.caption.weight(.semibold))
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 7)
+                            .glass(Capsule())
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 11)
-            .background(.regularMaterial, in: Capsule())
-            .offset(x: dragOffset)
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private func sidebarButton(_ space: BrowserSpace) -> some View {
+        Button {
+            app.showSidebar = true
+        } label: {
+            Image(systemName: space.isPrivate ? "eyeglasses" : "sidebar.left")
+                .font(.body.weight(.semibold))
+                .foregroundStyle(space.theme.accent)
+                .frame(width: 48, height: 48)
+                .glass(Circle())
+                .overlay(alignment: .topTrailing) {
+                    Text("\(app.tabs.currentSpaceTabs.count)")
+                        .font(.system(size: 10, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(space.theme.gradient, in: Capsule())
+                        .offset(x: 3, y: -3)
+                }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("サイドバー")
+    }
+
+    /// 左右にスワイプすると隣のタブへ。タップで検索・URL・AI への質問。
+    private func address(tab: BrowserTab?, space: BrowserSpace) -> some View {
+        HStack(spacing: 8) {
+            if let tab, tab.canGoBack {
+                Button {
+                    tab.goBack()
+                } label: {
+                    Image(systemName: "chevron.backward")
+                        .font(.subheadline.weight(.semibold))
+                        .frame(width: 26, height: 40)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("戻る")
+            }
+            Image(systemName: (tab?.isBlank ?? true) ? "sparkle.magnifyingglass" : (tab?.url?.scheme == "https" ? "lock.fill" : "globe"))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text(addressText(tab))
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle((tab?.isBlank ?? true) ? Color.secondary : Color.primary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            pageMenu(tab)
+        }
+        .padding(.leading, 14)
+        .padding(.trailing, 6)
+        .frame(height: 48)
+        .glass(Capsule())
+        .overlay(alignment: .bottomLeading) {
+            if let tab, tab.isLoading {
+                GeometryReader { geo in
+                    Capsule()
+                        .fill(space.theme.gradient)
+                        .frame(width: max(8, geo.size.width * tab.progress), height: 2.5)
+                        .frame(maxHeight: .infinity, alignment: .bottom)
+                }
+                .padding(.horizontal, 20)
+                .allowsHitTesting(false)
+            }
+        }
+        .overlay {
+            if app.assistant.isRunning {
+                GlowBorder(shape: Capsule(), lineWidth: 2)
+            }
+        }
+        .contentShape(Capsule())
+        .onTapGesture { app.showCommandBar = true }
+        .offset(x: dragOffset)
         .simultaneousGesture(
             DragGesture(minimumDistance: 20)
                 .onChanged { value in
@@ -189,6 +338,45 @@ struct BottomBar: View {
                     app.tabs.selectAdjacent(dx < 0 ? 1 : -1)
                 }
         )
+    }
+
+    private func pageMenu(_ tab: BrowserTab?) -> some View {
+        Menu {
+            if let tab, let url = tab.url {
+                Button {
+                    tab.isLoading ? tab.stopLoading() : tab.reload()
+                } label: { Label(tab.isLoading ? "読み込みを中止" : "再読み込み", systemImage: tab.isLoading ? "xmark" : "arrow.clockwise") }
+                if tab.canGoForward {
+                    Button {
+                        tab.goForward()
+                    } label: { Label("進む", systemImage: "chevron.forward") }
+                }
+                ShareLink(item: url) { Label("共有", systemImage: "square.and.arrow.up") }
+                Button {
+                    UIPasteboard.general.url = url
+                } label: { Label("URLをコピー", systemImage: "doc.on.doc") }
+                Button {
+                    app.history.addToSpeedDial(title: tab.displayTitle, url: url)
+                } label: { Label("スピードダイヤルに追加", systemImage: "square.grid.2x2") }
+                Button {
+                    app.tabs.togglePin(tab)
+                } label: { Label(tab.isPinned ? "ピン留めを外す" : "ピン留め", systemImage: tab.isPinned ? "pin.slash" : "pin") }
+                Divider()
+            }
+            Button {
+                app.tabs.newTab()
+            } label: { Label("新しいタブ", systemImage: "plus") }
+            Button {
+                app.tabs.newTab(in: BrowserSpace.privateID)
+            } label: { Label("プライベートタブ", systemImage: "eyeglasses") }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 38, height: 40)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("ページのメニュー")
     }
 
     @ViewBuilder
@@ -207,52 +395,7 @@ struct BottomBar: View {
     }
 
     private func addressText(_ tab: BrowserTab?) -> String {
-        guard let tab, !tab.isBlank else { return "検索・URL・AIに質問" }
+        guard let tab, !tab.isBlank else { return "検索、URL、AIに質問" }
         return URLParser.displayHost(tab.url)
-    }
-
-    private func toolbarButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.title3)
-                .frame(width: 44, height: 36)
-        }
-        .disabled(!enabled)
-        .foregroundStyle(enabled ? Color.primary : Color.secondary.opacity(0.5))
-    }
-
-    private func moreMenu(_ tab: BrowserTab?) -> some View {
-        Menu {
-            if let tab, let url = tab.url {
-                ShareLink(item: url) { Label("共有", systemImage: "square.and.arrow.up") }
-                Button {
-                    UIPasteboard.general.url = url
-                } label: { Label("URLをコピー", systemImage: "doc.on.doc") }
-                Button {
-                    app.history.addToSpeedDial(title: tab.displayTitle, url: url)
-                } label: { Label("スピードダイヤルに追加", systemImage: "square.grid.2x2") }
-                Button {
-                    app.tabs.togglePin(tab)
-                } label: { Label(tab.isPinned ? "ピン留めを外す" : "ピン留め", systemImage: tab.isPinned ? "pin.slash" : "pin") }
-                Divider()
-            }
-            Button {
-                app.tabs.newTab()
-            } label: { Label("新しいタブ", systemImage: "plus.square.on.square") }
-            Button {
-                app.tabs.newTab(in: BrowserSpace.privateID)
-            } label: { Label("プライベートタブ", systemImage: "eyeglasses") }
-            Button {
-                app.showSkills = true
-            } label: { Label("スキル", systemImage: "wand.and.stars") }
-            Button {
-                app.showSettings = true
-            } label: { Label("設定", systemImage: "gearshape") }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.title3)
-                .frame(width: 44, height: 36)
-        }
-        .foregroundStyle(.primary)
     }
 }

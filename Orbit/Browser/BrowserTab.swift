@@ -42,7 +42,8 @@ final class BrowserTab: Identifiable {
         let host = URLParser.displayHost(url)
         self.title = title ?? (host.isEmpty ? "新しいタブ" : host)
         self.webView = WKWebView(frame: .zero, configuration: configuration)
-        webView.allowsBackForwardNavigationGestures = true
+        // 左端・右端のスワイプはサイドバーと AI に使う（戻るはカプセルの ‹ とサイドバー）
+        webView.allowsBackForwardNavigationGestures = false
         webView.allowsLinkPreview = true
         if #available(iOS 16.4, *) { webView.isInspectable = true }
 

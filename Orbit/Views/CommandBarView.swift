@@ -1,77 +1,96 @@
 import SwiftUI
 
-/// Dia-style omnibox: one field that can open a URL, search the web, ask the AI, or run a skill.
+/// 統合コマンドバー。入力欄は親指の届く下にあり、候補はその上に積み上がる。
+/// URL・検索・AI への質問・Web 調べもの・ブラウザ操作・スキル・タブ・履歴を1か所で。
 struct CommandBarView: View {
     @Environment(AppModel.self) private var app
-    @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @FocusState private var focused: Bool
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isCurrentURL: Bool { app.tabs.current?.url?.absoluteString == trimmed }
+
+    private func close() {
+        focused = false
+        app.showCommandBar = false
+    }
 
     var body: some View {
-        NavigationStack {
-            List {
-                if !trimmed.isEmpty {
-                    Section {
-                        if let url = URLParser.url(from: trimmed) {
-                            row("arrow.up.right.square", "開く", url.absoluteString) {
-                                app.tabs.open(url); dismiss()
-                            }
-                        }
-                        row("magnifyingglass", "\(app.settings.searchEngine.name)で検索", trimmed) {
-                            app.search(trimmed); dismiss()
-                        }
-                        row("sparkles", "AIに質問", trimmed) {
-                            app.ask(trimmed, mode: .chat)
-                        }
-                        row("globe", "Webでまとめて調べる（AIが複数のページを読む）", trimmed) {
-                            app.ask(trimmed, mode: .web)
-                        }
-                        row("wand.and.stars", "AIに実行させる（ブラウザ操作）", trimmed) {
-                            app.ask(trimmed, mode: .agent)
-                        }
-                    }
-                }
+        let space = app.tabs.currentSpace
+        ZStack(alignment: .bottom) {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .ignoresSafeArea()
+                .onTapGesture { close() }
 
-                let historyHits = isSkillCommand ? [] : app.history.search(trimmed)
-                if !historyHits.isEmpty && app.tabs.current?.url?.absoluteString != trimmed {
-                    Section("履歴") {
-                        ForEach(historyHits) { entry in
-                            row("clock.arrow.circlepath", entry.title.isEmpty ? entry.host : entry.title, entry.url) {
-                                if let url = URL(string: entry.url) { app.tabs.open(url) }
-                                dismiss()
+            VStack(spacing: 10) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        let tabs = matchingTabs
+                        if !tabs.isEmpty {
+                            section("開いているタブ") {
+                                ForEach(tabs.prefix(5)) { tab in
+                                    row("square.on.square", tab.displayTitle, URLParser.displayHost(tab.url)) {
+                                        app.tabs.select(tab)
+                                        close()
+                                    }
+                                }
+                            }
+                        }
+                        let historyHits = (isSkillCommand || isCurrentURL) ? [] : app.history.search(trimmed, limit: 4)
+                        if !historyHits.isEmpty {
+                            section("履歴") {
+                                ForEach(historyHits) { entry in
+                                    row("clock.arrow.circlepath", entry.title.isEmpty ? entry.host : entry.title, entry.url) {
+                                        if let url = URL(string: entry.url) { app.tabs.open(url) }
+                                        close()
+                                    }
+                                }
+                            }
+                        }
+                        let skills = matchingSkills
+                        if !skills.isEmpty {
+                            section("スキル") {
+                                ForEach(skills) { skill in
+                                    row(skill.icon, "/" + skill.name, skill.prompt) {
+                                        app.run(skill, extra: skillExtra)
+                                    }
+                                }
+                            }
+                        }
+                        if !trimmed.isEmpty && !isCurrentURL && !isSkillCommand {
+                            section(nil) {
+                                row("wand.and.stars", "AIに実行させる", "ブラウザを操作して代わりにやる") {
+                                    app.ask(trimmed, mode: .agent)
+                                }
+                                row("globe", "Webでまとめて調べる", "AIが複数のページを読んで答える") {
+                                    app.ask(trimmed, mode: .web)
+                                }
+                                row("sparkles", "AIに質問", trimmed) {
+                                    app.ask(trimmed, mode: .chat)
+                                }
+                                row("magnifyingglass", "\(app.settings.searchEngine.name)で検索", trimmed) {
+                                    app.search(trimmed)
+                                    close()
+                                }
+                                if let url = URLParser.url(from: trimmed) {
+                                    row("arrow.up.right", "開く", url.absoluteString) {
+                                        app.tabs.open(url)
+                                        close()
+                                    }
+                                }
                             }
                         }
                     }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 12)
                 }
+                .defaultScrollAnchor(.bottom)
+                .scrollIndicators(.hidden)
 
-                let skills = matchingSkills
-                if !skills.isEmpty {
-                    Section("スキル") {
-                        ForEach(skills) { skill in
-                            row(skill.icon, "/" + skill.name, skill.prompt) {
-                                app.run(skill, extra: skillExtra)
-                            }
-                        }
-                    }
-                }
-
-                let tabs = matchingTabs
-                if !tabs.isEmpty {
-                    Section("開いているタブ") {
-                        ForEach(tabs) { tab in
-                            row("square.on.square", tab.displayTitle, URLParser.displayHost(tab.url)) {
-                                app.tabs.select(tab); dismiss()
-                            }
-                        }
-                    }
-                }
-            }
-            .listStyle(.insetGrouped)
-            .safeAreaInset(edge: .top) {
                 HStack(spacing: 10) {
-                    Image(systemName: "sparkle.magnifyingglass").foregroundStyle(.secondary)
+                    Image(systemName: "sparkle.magnifyingglass")
+                        .foregroundStyle(space.theme.accent)
                     TextField("検索、URL、AIへの質問、/スキル", text: $text)
                         .focused($focused)
                         .textInputAutocapitalization(.never)
@@ -80,23 +99,23 @@ struct CommandBarView: View {
                         .submitLabel(.go)
                         .onSubmit(submit)
                     if !text.isEmpty {
-                        Button { text = "" } label: {
+                        Button {
+                            text = ""
+                        } label: {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
                         }
+                        .accessibilityLabel("消去")
                     }
+                    Button("閉じる") { close() }
+                        .font(.subheadline.weight(.semibold))
                 }
-                .padding(12)
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-                .padding(.horizontal)
-                .padding(.bottom, 6)
-                .background(Color(.systemGroupedBackground))
-            }
-            .navigationTitle("Orbit")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("キャンセル") { dismiss() }
-                }
+                .padding(.horizontal, 16)
+                .frame(height: 54)
+                .glass(Capsule())
+                .overlay(Capsule().strokeBorder(space.theme.gradient, lineWidth: 1.5))
+                .shadow(color: space.theme.accent.opacity(0.25), radius: 16, y: 4)
+                .padding(.horizontal, 10)
+                .padding(.bottom, 8)
             }
         }
         .onAppear {
@@ -104,6 +123,8 @@ struct CommandBarView: View {
             focused = true
         }
     }
+
+    // MARK: Matching
 
     private var isSkillCommand: Bool { trimmed.hasPrefix("/") }
 
@@ -122,14 +143,13 @@ struct CommandBarView: View {
             let q = skillQuery
             return app.skills.skills.filter { q.isEmpty || $0.name.localizedCaseInsensitiveContains(q) }
         }
-        return trimmed.isEmpty || app.tabs.current?.url.map({ $0.absoluteString == trimmed }) == true
-            ? app.skills.skills
-            : []
+        return (trimmed.isEmpty || isCurrentURL) ? app.skills.skills : []
     }
 
     private var matchingTabs: [BrowserTab] {
-        let all = app.tabs.tabs.filter { !$0.isBlank }
-        guard !trimmed.isEmpty, app.tabs.current?.url?.absoluteString != trimmed else { return all }
+        if isSkillCommand { return [] }
+        let all = app.tabs.tabs.filter { !$0.isBlank && !$0.isPrivate && $0.id != app.tabs.current?.id }
+        guard !trimmed.isEmpty, !isCurrentURL else { return all }
         return all.filter {
             $0.displayTitle.localizedCaseInsensitiveContains(trimmed) ||
             ($0.url?.absoluteString.localizedCaseInsensitiveContains(trimmed) ?? false)
@@ -144,9 +164,27 @@ struct CommandBarView: View {
         }
         if URLParser.url(from: trimmed) != nil || app.settings.omniboxDefault == .search {
             app.openOrSearch(trimmed)
-            dismiss()
+            close()
         } else {
             app.ask(trimmed, mode: .auto)
+        }
+    }
+
+    // MARK: Pieces
+
+    private func section<Content: View>(_ title: String?, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let title {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 8)
+            }
+            VStack(spacing: 0) {
+                content()
+            }
+            .padding(.vertical, 4)
+            .glass(RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
     }
 
@@ -154,13 +192,20 @@ struct CommandBarView: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .frame(width: 26)
-                    .foregroundStyle(Theme.accent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).foregroundStyle(.primary).lineLimit(1)
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(app.tabs.currentSpace.theme.accent)
+                    .frame(width: 32, height: 32)
+                    .background(app.tabs.currentSpace.theme.accent.opacity(0.13), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.subheadline.weight(.medium)).foregroundStyle(.primary).lineLimit(1)
                     Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 }

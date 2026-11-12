@@ -1,103 +1,141 @@
 import SwiftUI
 
-/// 新しいタブ：Opera のスピードダイヤル ＋ よく見るサイト ＋ AI への入り口。
+/// 新しいタブ。光の背景の上に直接置かれる：あいさつ、AI への入り口、スピードダイヤル。
 struct StartPageView: View {
     @Environment(AppModel.self) private var app
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 12), count: 4)
 
+    private var greeting: String {
+        switch Calendar.current.component(.hour, from: Date()) {
+        case 5..<11: return "おはようございます"
+        case 11..<18: return "こんにちは"
+        default: return "こんばんは"
+        }
+    }
+
     var body: some View {
         let space = app.tabs.currentSpace
         ScrollView {
-            VStack(spacing: 26) {
-                header(space)
-
-                Button {
-                    app.showCommandBar = true
-                } label: {
-                    HStack {
-                        Image(systemName: "sparkle.magnifyingglass")
-                        Text("検索、URL、またはAIに質問")
-                        Spacer()
+            VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: space.icon)
+                        Text(space.name)
                     }
-                    .foregroundStyle(.secondary)
-                    .padding()
-                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(space.theme.accent)
+                    Text(space.isPrivate ? "プライベート" : greeting)
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                    Text(space.isPrivate ? "このタブの履歴と Cookie は、閉じると消えます。" : Date().formatted(date: .complete, time: .omitted))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .padding(.top, 36)
+
+                askCard(space)
 
                 if !space.isPrivate {
                     speedDial
                     frequentSites
                 }
-                aiSection
             }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 40)
+            .padding(.horizontal, 14)
+            .padding(.bottom, 30)
         }
-        .background {
-            ZStack {
-                Color(.systemBackground)
-                space.theme.gradient.opacity(space.isPrivate ? 0.25 : 0.08)
-            }
-            .ignoresSafeArea()
-        }
+        .scrollIndicators(.hidden)
     }
 
-    private func header(_ space: BrowserSpace) -> some View {
-        VStack(spacing: 12) {
-            if space.isPrivate {
-                Image(systemName: "eyeglasses")
-                    .font(.system(size: 44, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Text("プライベート").font(.title.weight(.bold))
-                Text("このタブの履歴・Cookie は、タブを閉じると消えます。")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            } else {
-                OrbView(size: 60, animating: true)
-                Text(space.name).font(.title.weight(.bold))
+    /// AI への入り口。タップでコマンドバー、下の例はそのまま実行。
+    private func askCard(_ space: BrowserSpace) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        return VStack(alignment: .leading, spacing: 14) {
+            Button {
+                app.showCommandBar = true
+            } label: {
+                HStack(spacing: 12) {
+                    OrbView(size: 40, animating: app.assistant.isRunning)
+                    Text("何でも聞く、探す、任せる")
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Spacer(minLength: 0)
+                }
+            }
+            .buttonStyle(.plain)
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    example("globe", "今日のニュースを調べてまとめて", .web)
+                    example("lightbulb", "量子コンピュータをやさしく説明して", .chat)
+                    example("airplane", "週末の小旅行プランを考えて", .chat)
+                }
+            }
+
+            if !app.assistant.usesCloud && !app.localAI.isReady {
+                Button {
+                    app.showModels = true
+                } label: {
+                    Label("まずAIモデルを用意する", systemImage: "arrow.down.circle.fill")
+                        .font(.footnote.weight(.semibold))
+                }
             }
         }
-        .padding(.top, 44)
+        .padding(16)
+        .glass(shape)
+        .overlay(shape.strokeBorder(space.theme.gradient.opacity(0.5), lineWidth: 1))
+    }
+
+    private func example(_ icon: String, _ text: String, _ mode: SendMode) -> some View {
+        Button {
+            app.ask(text, mode: mode)
+        } label: {
+            Label(text, systemImage: icon)
+                .font(.footnote.weight(.medium))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 9)
+                .background(Color.primary.opacity(0.06), in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text).font(.caption.weight(.semibold)).foregroundStyle(.secondary)
     }
 
     @ViewBuilder
     private var speedDial: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("スピードダイヤル").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
-            LazyVGrid(columns: columns, spacing: 14) {
-                ForEach(app.history.speedDial) { item in
-                    SiteTile(title: item.title, url: URL(string: item.url)) {
-                        if let url = URL(string: item.url) { app.tabs.open(url) }
+        VStack(alignment: .leading, spacing: 12) {
+            label("スピードダイヤル")
+            if app.history.speedDial.isEmpty {
+                Text("ページのメニュー（…）から、よく使うサイトを追加できます。")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            } else {
+                LazyVGrid(columns: columns, spacing: 14) {
+                    ForEach(app.history.speedDial) { item in
+                        SiteTile(title: item.title, url: URL(string: item.url)) {
+                            if let url = URL(string: item.url) { app.tabs.open(url) }
+                        }
+                        .contextMenu {
+                            Button(role: .destructive) {
+                                app.history.removeFromSpeedDial(item)
+                            } label: { Label("削除", systemImage: "trash") }
+                        }
                     }
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            app.history.removeFromSpeedDial(item)
-                        } label: { Label("削除", systemImage: "trash") }
-                    }
-                }
-                if app.history.speedDial.isEmpty {
-                    VStack(spacing: 6) {
-                        Image(systemName: "plus")
-                            .font(.title3)
-                            .frame(width: 54, height: 54)
-                            .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 14))
-                        Text("…メニューから追加").font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                    }
-                    .multilineTextAlignment(.center)
                 }
             }
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .glass(RoundedRectangle(cornerRadius: 26, style: .continuous))
     }
 
     @ViewBuilder
     private var frequentSites: some View {
         let sites = app.history.topSites(8)
         if !sites.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("よく見るサイト").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                label("よく見るサイト")
                 LazyVGrid(columns: columns, spacing: 14) {
                     ForEach(sites) { entry in
                         SiteTile(title: entry.host, url: URL(string: entry.url)) {
@@ -111,47 +149,10 @@ struct StartPageView: View {
                     }
                 }
             }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glass(RoundedRectangle(cornerRadius: 26, style: .continuous))
         }
-    }
-
-    private var aiSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("AIに聞いてみる").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
-            suggestion("globe", "今日の主要なニュースを調べてまとめて", mode: .web)
-            suggestion("lightbulb", "量子コンピュータをやさしく説明して", mode: .chat)
-            suggestion("airplane", "週末の小旅行プランを考えて", mode: .chat)
-            if !app.assistant.usesCloud && !app.localAI.isReady {
-                Button {
-                    app.showModels = true
-                } label: {
-                    Label("AIを使うには、まずAIモデルを用意してください", systemImage: "arrow.down.circle")
-                        .font(.footnote.weight(.semibold))
-                }
-                .padding(.top, 4)
-            }
-        }
-    }
-
-    private func suggestion(_ icon: String, _ text: String, mode: SendMode) -> some View {
-        Button {
-            app.ask(text, mode: mode)
-        } label: {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .frame(width: 24)
-                    .foregroundStyle(Theme.accent)
-                Text(text)
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.leading)
-                Spacer()
-                Image(systemName: "arrow.up.right")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(14)
-            .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14))
-        }
-        .buttonStyle(.plain)
     }
 }
 
