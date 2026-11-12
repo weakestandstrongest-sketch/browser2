@@ -20,35 +20,40 @@ enum Theme {
     }
 }
 
-/// AI の印：ティールの円に、回る輪と点。
+/// Orbit のシンボルマーク「切れた O」：右上が切れた太い輪と、その切れ目の衛星。
+/// AI が動いている間は、輪ごと回る。
 struct OrbView: View {
     var size: CGFloat = 36
     var animating = false
+    var color: Color = Theme.accent
     @State private var rotation = 0.0
 
     var body: some View {
         ZStack {
-            Circle().fill(Theme.accent)
+            // 100×100 の枠の中で、半径30・太さ12の輪（円周の約78%）。切れ目は右上
             Circle()
-                .trim(from: 0, to: 0.78)
-                .stroke(Theme.ink.opacity(0.85), style: StrokeStyle(lineWidth: max(1.6, size * 0.065), lineCap: .round))
-                .frame(width: size * 0.5, height: size * 0.5)
-                .rotationEffect(.degrees(rotation - 50))
+                .trim(from: 0, to: 148 / (2 * .pi * 30))
+                .stroke(color, style: StrokeStyle(lineWidth: size * 0.12, lineCap: .round))
+                .frame(width: size * 0.6, height: size * 0.6)
+                .rotationEffect(.degrees(-6))
             Circle()
-                .fill(Theme.ink.opacity(0.85))
-                .frame(width: size * 0.14, height: size * 0.14)
+                .fill(color)
+                .frame(width: size * 0.132, height: size * 0.132)
+                .offset(x: size * 0.247, y: -size * 0.186)
         }
         .frame(width: size, height: size)
-        .shadow(color: Theme.accent.opacity(animating ? 0.8 : 0), radius: 10)
+        .rotationEffect(.degrees(rotation))
+        .shadow(color: color.opacity(animating ? 0.7 : 0), radius: size * 0.2)
         .onAppear { updateAnimation() }
         .onChange(of: animating) { updateAnimation() }
+        .accessibilityHidden(true)
     }
 
     private func updateAnimation() {
         if animating {
-            withAnimation(.linear(duration: 1.4).repeatForever(autoreverses: false)) { rotation = 360 }
+            withAnimation(.linear(duration: 1.6).repeatForever(autoreverses: false)) { rotation = 360 }
         } else {
-            withAnimation(.default) { rotation = 0 }
+            withAnimation(.easeOut(duration: 0.4)) { rotation = 0 }
         }
     }
 }

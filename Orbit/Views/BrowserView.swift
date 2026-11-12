@@ -228,7 +228,7 @@ struct CommandCapsule: View {
                     Button {
                         app.showAssistant = true
                     } label: {
-                        OrbView(size: 30, animating: app.assistant.isRunning)
+                        OrbView(size: 32, animating: app.assistant.isRunning)
                             .frame(width: 50, height: 50)
                             .background(Color.primary.opacity(0.08), in: Circle())
                     }
